@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Packages - jobrunner{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Packages</h1></div>
+<p class="muted">
+  Extra packages are installed with <code>pip --target</code> into <code>{{ lib_dir }}</code>
+  (inside the data volume). Jobs can <code>import</code> them immediately — no restart needed —
+  and they survive container rebuilds.
+</p>
+
+<h2>Repository &amp; proxy settings</h2>
+<table class="settings-table">
+  <tbody>
+    <tr>
+      <td>Pip index URL</td>
+      <td><code>{{ mask(pip_cfg.index_url) if pip_cfg.index_url else "https://pypi.org/simple" }}</code>
+          <span class="muted">({{ pip_cfg.index_url_source }})</span></td>
+    </tr>
+    <tr>
+      <td>Proxy</td>
+      <td><code>{{ mask(pip_cfg.proxy) if pip_cfg.proxy else "none" }}</code>
+          <span class="muted">({{ pip_cfg.proxy_source }})</span></td>
+    </tr>
+  </tbody>
+</table>
+<form method="post" action="/packages/settings" class="settings-form">
+  <p class="muted">GUI overrides take precedence over the
+    <code>JOBRUNNER_PIP_INDEX_URL</code> / <code>JOBRUNNER_PIP_PROXY</code> Docker variables.
+    Leave a field empty to fall back to the environment value.</p>
+  <label>Pip index URL (GUI override)
+    <input type="text" name="index_url" value="{{ pip_cfg.gui_index_url }}"
+           placeholder="https://pypi.mycorp.local/simple">
+  </label>
+  <label>Proxy, with optional auth (GUI override)
+    <input type="text" name="proxy" value="{{ pip_cfg.gui_proxy }}"
+           placeholder="http://user:password@proxy.corp:3128">
+  </label>
+  <button type="submit" class="primary">Save settings</button>
+</form>
+
+<h2>Install a package</h2>
+<form method="post" action="/packages/install" class="filters">
+  <input type="text" name="spec" placeholder="e.g. pandas>=2.0 or requests[socks]" required>
+  <button type="submit" class="primary">Install</button>
+</form>
+
+{% if op %}
+<div id="pip-op" hx-get="/packages/op/{{ op }}/frag" hx-trigger="load, every 2s" hx-swap="innerHTML">
+  {% if op_state %}{% include "partials/pip_op.html" with context %}{% endif %}
+</div>
+{% endif %}
+
+<h2>Installed from this UI ({{ extra|length }})</h2>
+{% if not extra %}
+<p class="muted">No extra packages yet.</p>
+{% else %}
+<table>
+  <thead><tr><th>Package</th><th>Version</th><th></th></tr></thead>
+  <tbody>
+  {% for p in extra %}
+    <tr>
+      <td><code>{{ p.name }}</code></td>
+      <td class="muted">{{ p.version }}</td>
+      <td class="actions">
+        <form method="post" action="/packages/uninstall" class="inline"
+              onsubmit="return confirm('Uninstall {{ p.name }} {{ p.version }}?');">
+          <input type="hidden" name="dist_info" value="{{ p.dist_info }}">
+          <button type="submit" class="link">uninstall</button>
+        </form>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<details>
+  <summary class="muted">Base environment ({{ base|length }} packages)</summary>
+  <table>
+    <tbody>
+    {% for p in base %}
+      <tr><td><code>{{ p.name }}</code></td><td class="muted">{{ p.version }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</details>
+{% endblock %}

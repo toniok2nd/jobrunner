@@ -1,0 +1,8 @@
+**/__pycache__
+**/*.pyc
+.git
+.gitignore
+data/
+jobs/*.py
+!jobs/examples/
+docker-compose.example.yml

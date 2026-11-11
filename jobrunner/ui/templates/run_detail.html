@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Run {{ run.id[:8] }} - jobrunner{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Run <code>{{ run.id[:8] }}</code> &middot; <a href="/jobs/{{ run.job_name }}">{{ run.job_name }}</a></h1>
+  {% if active %}
+  <form method="post" action="/runs/{{ run.id }}/cancel" class="inline">
+    <button type="submit" class="danger">Cancel run</button>
+  </form>
+  {% endif %}
+</div>
+
+<p>
+  <span class="badge s-{{ run.status }}">{{ run.status }}</span>
+  <span class="muted">
+    triggered by {{ run.triggered_by }}
+    &middot; queued {{ run.queued_at.strftime("%Y-%m-%d %H:%M:%S") if run.queued_at }}
+    {% if run.duration_seconds is not none %}&middot; {{ run.duration_seconds }}s{% endif %}
+  </span>
+</p>
+{% if run.error %}<div class="alert"><code>{{ run.error }}</code></div>{% endif %}
+{% if run.params %}<p>Params: <code>{{ run.params | tojson }}</code></p>{% endif %}
+
+<h2>Tasks</h2>
+<div id="task-table"
+     {% if active %}hx-get="/runs/{{ run.id }}/frag/tasks" hx-trigger="load, every 2s" hx-swap="innerHTML"{% endif %}>
+  {% include "partials/tasks.html" %}
+</div>
+
+{% if selected_task %}
+<h2>Log: <code>{{ selected_task }}</code></h2>
+<div id="log-box"
+     {% if active %}hx-get="/runs/{{ run.id }}/frag/log?task={{ selected_task }}" hx-trigger="every 2s" hx-swap="innerHTML"{% endif %}>
+  {% include "partials/log.html" %}
+</div>
+{% endif %}
+{% endblock %}

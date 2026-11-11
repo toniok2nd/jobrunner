@@ -1,0 +1,8 @@
+<div class="pip-op">
+  <p>Installing <code>{{ op.spec }}</code> — <span class="badge s-{{ 'running' if op.status == 'running' else ('success' if op.status == 'success' else 'failed') }}">{{ op.status }}</span></p>
+  <pre class="log">{{ op.lines | join('\n') }}</pre>
+  {% if op.status != 'running' %}
+  <p><a href="/packages">Refresh package list</a></p>
+  <script>document.getElementById('pip-op').removeAttribute('hx-trigger');</script>
+  {% endif %}
+</div>

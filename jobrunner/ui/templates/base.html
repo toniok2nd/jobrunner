@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}jobrunner{% endblock %}</title>
+  <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/vendor/htmx.min.js"></script>
+  <script>
+  // Copy a shell command (or any text from a data-cmd attribute) to the clipboard.
+  // Without data-cmd, copies the visible text of the nearest <pre> sibling
+  // (used by the documentation code blocks — no HTML-escaping pitfalls).
+  async function copyCmd(btn) {
+    var text = btn.dataset.cmd;
+    if (!text) {
+      var pre = btn.closest(".doc-code") ? btn.closest(".doc-code").querySelector("pre")
+                                         : btn.parentElement.querySelector("pre");
+      text = pre ? pre.textContent : "";
+    }
+    var ok = false;
+    try { await navigator.clipboard.writeText(text); ok = true; }
+    catch (e) {
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      try { ok = document.execCommand("copy"); } catch (e2) {}
+      ta.remove();
+    }
+    var old = btn.textContent;
+    btn.textContent = ok ? "Copied!" : "Copy failed";
+    setTimeout(function () { btn.textContent = old; }, 1500);
+  }
+  </script>
+</head>
+<body>
+<nav>
+  <a class="brand" href="/"><img src="/static/icon.svg" alt="" class="brand-icon"> jobrunner</a>
+  <a href="/">Jobs</a>
+  <a href="/runs">Runs</a>
+  <a href="/endpoints">Endpoints</a>
+  <a href="/libs">Libraries</a>
+  <a href="/packages">Packages</a>
+  <a href="/tokens">API tokens</a>
+  <a href="/docs">Docs</a>
+  <span class="spacer"></span>
+  {% if user %}
+  <span class="user">{{ user }}</span>
+  <form method="post" action="/logout" class="inline">
+    <button type="submit" class="link">Log out</button>
+  </form>
+  {% endif %}
+</nav>
+<main>
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

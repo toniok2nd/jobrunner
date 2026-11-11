@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head"><h1>Runs</h1></div>
+<form method="get" action="/runs" class="filters">
+  <input type="text" name="job" placeholder="job name" value="{{ filter_job }}">
+  <select name="status">
+    <option value="">any status</option>
+    {% for s in ["queued", "running", "success", "failed", "cancelled"] %}
+    <option value="{{ s }}" {% if filter_status == s %}selected{% endif %}>{{ s }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit">Filter</button>
+</form>
+{% if not runs %}
+<p class="muted">No runs found.</p>
+{% else %}
+<table>
+  <thead><tr><th>Run</th><th>Job</th><th>Status</th><th>By</th><th>Queued</th><th>Duration</th></tr></thead>
+  <tbody>
+  {% for run in runs %}
+    <tr>
+      <td><a href="/runs/{{ run.id }}"><code>{{ run.id[:8] }}</code></a></td>
+      <td><a href="/jobs/{{ run.job_name }}">{{ run.job_name }}</a></td>
+      <td><span class="badge s-{{ run.status }}">{{ run.status }}</span></td>
+      <td class="muted">{{ run.triggered_by }}</td>
+      <td class="muted">{{ run.queued_at.strftime("%Y-%m-%d %H:%M:%S") if run.queued_at }}</td>
+      <td class="muted">{{ run.duration_seconds ~ "s" if run.duration_seconds is not none else "" }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}{{ res.name }} - jobrunner{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>{{ res.name }}</h1>
+  <a class="button" href="/jobs/{{ res.name }}/edit">Edit code</a>
+</div>
+
+{% if res.error %}
+<div class="alert"><strong>Load error:</strong> <code>{{ res.error }}</code></div>
+{% else %}
+{% set job = res.job %}
+<p class="muted">{{ job.description or "No description." }}</p>
+<p>
+  {% if job.schedule %}Schedule: <code>{{ job.schedule }}</code>{% else %}No cron schedule (API/manual trigger).{% endif %}
+</p>
+
+<h2>Task graph</h2>
+<table>
+  <thead><tr><th>Task</th><th>Depends on</th></tr></thead>
+  <tbody>
+  {% for spec in job.task_spec() %}
+    <tr>
+      <td><code>{{ spec.task }}</code></td>
+      <td class="muted">{% if spec.depends_on %}{{ spec.depends_on|join(", ") }}{% else %}—{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% if job.endpoints %}
+<h2>Custom endpoints</h2>
+<table>
+  <thead><tr><th>Path</th><th>Handler</th><th>curl</th></tr></thead>
+  <tbody>
+  {% for ep in endpoint_rows %}
+    <tr>
+      <td><code>/api/v1/web/{{ res.name }}/{{ ep.path }}</code></td>
+      <td class="muted">{{ ep.handler }}()</td>
+      <td><button type="button" class="copy-btn" data-cmd="{{ ep.curl }}" onclick="copyCmd(this)">Copy curl</button></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<h2>Trigger a run</h2>
+<form method="post" action="/jobs/{{ res.name }}/trigger" class="trigger-form">
+  <label>Params (JSON object, optional)
+    <textarea name="params" rows="2" spellcheck="false"
+      placeholder='{{ (job.default_params | tojson) if job.default_params else "{}" }}'></textarea>
+  </label>
+  <button type="submit" class="primary">Trigger run</button>
+</form>
+{% endif %}
+
+<h2>Recent runs</h2>
+{% if not runs %}
+<p class="muted">No runs yet.</p>
+{% else %}
+<table>
+  <thead><tr><th>Run</th><th>Status</th><th>By</th><th>Queued</th><th>Duration</th></tr></thead>
+  <tbody>
+  {% for run in runs %}
+    <tr>
+      <td><a href="/runs/{{ run.id }}"><code>{{ run.id[:8] }}</code></a></td>
+      <td><span class="badge s-{{ run.status }}">{{ run.status }}</span></td>
+      <td class="muted">{{ run.triggered_by }}</td>
+      <td class="muted">{{ run.queued_at.strftime("%Y-%m-%d %H:%M:%S") if run.queued_at }}</td>
+      <td class="muted">{{ run.duration_seconds ~ "s" if run.duration_seconds is not none else "" }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<a href="/runs?job={{ res.name }}">All runs of this job &rarr;</a>
+{% endif %}
+{% endblock %}

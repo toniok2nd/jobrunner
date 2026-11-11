@@ -1,0 +1,272 @@
+{% extends "base.html" %}
+{% block title %}Documentation - jobrunner{% endblock %}
+{% block content %}
+<div class="docs-layout">
+  <nav class="docs-toc">
+    <div class="toc-title">Sommaire</div>
+    <a href="#intro">Introduction</a>
+    <a href="#create-job">Créer un job</a>
+    <a href="#tasks">Tâches &amp; DAG</a>
+    <a href="#libs">Modules partagés</a>
+    <a href="#ctx-params">Paramètres &amp; ctx</a>
+    <a href="#schedule">Cron (schedule)</a>
+    <a href="#trigger">Déclencher un run</a>
+    <a href="#endpoints">Endpoints HTTP</a>
+    <a href="#editor">Éditeur</a>
+    <a href="#packages">Packages</a>
+    <a href="#api">API REST</a>
+  </nav>
+
+  <div class="docs-body">
+
+  <section id="intro">
+    <h1>Guide jobrunner</h1>
+    <p class="lead">jobrunner exécute des <strong>jobs Python</strong> (des DAG de tâches)
+    déclenchés par <strong>API REST</strong>, par <strong>cron</strong>, depuis la GUI,
+    ou via des <strong>endpoints HTTP personnalisés</strong>. Un <em>job</em> est un simple
+    fichier <code>.py</code> éditable dans le navigateur : rien à déployer, rien à redémarrer.</p>
+    <div class="callout">
+      <strong>Le cycle de vie complet :</strong>
+      Jobs → <em>New job</em> → écrire le code → Save → Trigger → suivre le run dans Runs.
+    </div>
+  </section>
+
+  <section id="create-job">
+    <h2>Créer un job</h2>
+    <p>Un fichier par job, dans le répertoire des jobs. Le nom du job = nom du fichier
+    (<code>etl_daily.py</code> → job <code>etl_daily</code>). Attributs de module optionnels :</p>
+    {% set doc %}
+"""Mon premier job"""
+from jobrunner.dsl import task
+
+description = "Ce que fait ce job"      # affichée dans la GUI
+schedule = "0 2 * * *"                  # cron optionnel (tous les jours à 2h)
+default_params = {"env": "dev"}          # fusionnés avec les params du trigger
+
+@task
+def hello(ctx):
+    ctx.log("bonjour")                   # écrit dans le log de la tâche
+    return {"rows": 42}                  # valeur transmise aux tâches suivantes
+{% endset %}
+    <div class="doc-code">
+      <button class="copy-btn" onclick="copyCmd(this)">Copy</button>
+      <pre>{{ doc | trim }}</pre>
+    </div>
+  </section>
+
+  <section id="tasks">
+    <h2>Tâches &amp; DAG</h2>
+    <p>Chaque fonction décorée <code>@task</code> est une tâche. Les dépendances définissent le
+    graphe ; les tâches indépendantes d'un même niveau s'exécutent <strong>en parallèle</strong>.
+    La valeur de retour d'une tâche amont est <strong>injectée par nom de paramètre</strong> :</p>
+    {% set doc %}
+@task
+def extract(ctx):
+    return {"rows": 1000}
+
+@task(depends_on=[extract])
+def transform(ctx, extract):             # ← reçoit le retour de extract()
+    return {"rows": extract["rows"] * 2}
+
+@task(depends_on=[transform])
+def load_warehouse(ctx, transform): ...
+
+@task(depends_on=[transform])
+def load_marts(ctx, transform):          # en parallèle avec load_warehouse
+
+@task(depends_on=[load_warehouse, load_marts])
+def notify(ctx): ...                     # ne part que quand les deux ont fini
+{% endset %}
+    <div class="doc-code">
+      <button class="copy-btn" onclick="copyCmd(this)">Copy</button>
+      <pre>{{ doc | trim }}</pre>
+    </div>
+    <ul>
+      <li>Si une tâche lève une exception : la tâche est <span class="badge s-failed">failed</span>,
+        ses descendantes <span class="badge s-upstream_failed">upstream_failed</span>, le run
+        <span class="badge s-failed">failed</span> — la traceback est dans le log de la tâche.</li>
+      <li>Les <code>print()</code> et <code>ctx.log()</code> sont capturés <strong>par tâche</strong>,
+        visibles en direct dans la page du run.</li>
+    </ul>
+  </section>
+
+  <section id="libs">
+    <h2>Modules partagés (Libraries)</h2>
+    <p>Le code commun à plusieurs jobs/endpoints se place dans <code>jobs/lib/</code> :
+    créez et éditez ces modules depuis la page <a href="/libs">Libraries</a>, puis importez-les
+    normalement — ils sont sur le <code>sys.path</code> de tous les processus et rechargés à chaud :</p>
+    <div class="doc-code">
+      <button class="copy-btn" onclick="copyCmd(this)">Copy</button>
+      <pre># jobs/lib/my_utils.py
+def normalize(name: str) -> str:
+    return name.strip().lower()
+
+# dans un job ou un endpoint :
+from my_utils import normalize
+
+@task
+def clean(ctx):
+    ctx.log(normalize(ctx.params.get("name", "")))
+
+@endpoint("who")
+def who_handler(ctx):
+    return {"hello": normalize(ctx.params.get("name", "world"))}</pre>
+    </div>
+    <p>Dans l'éditeur, <kbd>F12</kbd> sur <code>my_utils</code> ouvre sa source et
+    <code>my_utils.</code> propose ses membres en autocomplétion.</p>
+  </section>
+
+  <section id="ctx-params">
+    <h2>Paramètres &amp; <code>ctx</code></h2>
+    <p>Chaque tâche reçoit un objet <code>ctx</code> en premier argument :</p>
+    <table>
+      <thead><tr><th>Attribut</th><th>Contenu</th></tr></thead>
+      <tbody>
+        <tr><td><code>ctx.params</code></td><td><code>default_params</code> fusionnés avec les params du trigger</td></tr>
+        <tr><td><code>ctx.run_id</code></td><td>Identifiant unique du run</td></tr>
+        <tr><td><code>ctx.attempt</code></td><td>Numéro de tentative (1)</td></tr>
+        <tr><td><code>ctx.log(msg)</code></td><td>Écrit dans le log de la tâche</td></tr>
+      </tbody>
+    </table>
+    {% set doc %}
+default_params = {"date": "today"}
+
+@task
+def report(ctx):
+    ctx.log(f"rapport du {ctx.params['date']} (run {ctx.run_id[:8]})")
+{% endset %}
+    <div class="doc-code">
+      <button class="copy-btn" onclick="copyCmd(this)">Copy</button>
+      <pre>{{ doc | trim }}</pre>
+    </div>
+    <p>Déclencher avec des paramètres surcharge les valeurs par défaut :
+    <code>{"params": {"date": "2026-11-11"}}</code></p>
+  </section>
+
+  <section id="schedule">
+    <h2>Cron (schedule)</h2>
+    <p><code>schedule = "*/15 * * * *"</code> au niveau module — format cron classique
+    « minute heure jour mois jour-de-semaine » (UTC). Le planificateur tourne chaque minute
+    et rattrape les occurrences manquées (sans rattrapage au premier démarrage).
+    Désactivable globalement avec <code>JOBRUNNER_ENABLE_BEAT=false</code>.</p>
+  </section>
+
+  <section id="trigger">
+    <h2>Déclencher un run</h2>
+    <p>Trois façons : bouton <strong>Trigger run</strong> sur la page du job, cron, ou l'API :</p>
+    {% set doc %}curl -X POST {{ request.base_url }}api/v1/jobs/etl_daily/runs \
+  -H "Authorization: Bearer jr_..." \
+  -H "Content-Type: application/json" \
+  -d '{"params": {"date": "2026-11-11"}}'
+
+# → {"run_id": "9f2a…", "status": "queued"}
+
+curl {{ request.base_url }}api/v1/runs/9f2a… \
+  -H "Authorization: Bearer jr_..."
+# → statut + état/durée de chaque tâche
+
+curl "{{ request.base_url }}api/v1/runs/9f2a…/logs?task=transform" \
+  -H "Authorization: Bearer jr_..."
+# → le log de la tâche
+{% endset %}
+    <div class="doc-code">
+      <button class="copy-btn" onclick="copyCmd(this)">Copy</button>
+      <pre>{{ doc | trim }}</pre>
+    </div>
+    <p>Tokens : page <a href="/tokens">API tokens</a>. Documentation interactive des routes :
+    <a href="/api/docs" target="_blank">/api/docs</a>.</p>
+  </section>
+
+  <section id="endpoints">
+    <h2>Endpoints HTTP personnalisés</h2>
+    <p>Un job peut exposer ses propres routes API avec <code>@endpoint("chemin")</code> — exécution
+    <strong>synchrone</strong> dans le worker, la valeur retournée devient la réponse JSON :</p>
+    {% set doc %}
+from jobrunner.dsl import endpoint
+
+@endpoint("deploy")                     # → POST/GET /api/v1/web/mon_job/deploy
+def deploy_handler(ctx):
+    env = ctx.params.get("env", "dev")  # body JSON (POST) ou query params (GET)
+    ctx.log(f"deploy vers {env}")
+    return {"deployed": True, "env": env}
+{% endset %}
+    <div class="doc-code">
+      <button class="copy-btn" onclick="copyCmd(this)">Copy</button>
+      <pre>{{ doc | trim }}</pre>
+    </div>
+    <ul>
+      <li>Gérez-les comme les jobs : page <a href="/endpoints">Endpoints</a> (créer, éditer, tester).</li>
+      <li>Codes de réponse : <code>200</code> succès · <code>404</code> job/endpoint inconnu ·
+          <code>500</code> exception (traceback dans <code>log</code>) · <code>504</code> timeout.</li>
+      <li>Le handler peut déclencher le DAG du job lui-même : voir <code>run-now</code> dans
+        l'exemple <code>etl_daily</code>.</li>
+    </ul>
+  </section>
+
+  <section id="editor">
+    <h2>L'éditeur de code</h2>
+    <table>
+      <thead><tr><th>Raccourci</th><th>Action</th></tr></thead>
+      <tbody>
+        <tr><td><kbd>Ctrl+Space</kbd></td><td>Autocomplétion (keywords, API jobrunner, membres : <code>ctx.</code>, <code>time.</code>…)</td></tr>
+        <tr><td><kbd>F12</kbd> / <kbd>Ctrl+G D</kbd> / <kbd>Ctrl+Clic</kbd></td><td>Aller à la définition (récursif : fichier → module → sous-objet, plein écran)</td></tr>
+        <tr><td><kbd>Alt+←</kbd> / <kbd>Ctrl+]</kbd> / <kbd>Alt+]</kbd></td><td>Retour arrière (pile de navigation)</td></tr>
+        <tr><td><kbd>Ctrl+F</kbd>, <kbd>F3</kbd> / <kbd>Maj+F3</kbd></td><td>Rechercher dans la définition affichée</td></tr>
+      </tbody>
+    </table>
+    <p>La sauvegarde valide la syntaxe Python <em>avant</em> écriture et recharge le job
+    immédiatement — aucun redémarrage nécessaire.</p>
+  </section>
+
+  <section id="packages">
+    <h2>Packages Python</h2>
+    <p>La page <a href="/packages">Packages</a> installe des librairies supplémentaires
+    (<code>pandas&gt;=2.0</code>, <code>requests[socks]</code>…) directement depuis la GUI.
+    Elles sont disponibles immédiatement dans les jobs et survivent aux reconstructions du
+    conteneur. Dépôt pip et proxy (avec auth) configurables : variables
+    <code>JOBRUNNER_PIP_INDEX_URL</code> / <code>JOBRUNNER_PIP_PROXY</code> ou surcharge GUI.</p>
+  </section>
+
+  <section id="api">
+    <h2>Référence API</h2>
+    <table>
+      <thead><tr><th>Méthode</th><th>Route</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td>GET</td><td><code>/api/v1/health</code></td><td>État du service + Redis (sans auth)</td></tr>
+        <tr><td>GET</td><td><code>/api/v1/jobs</code></td><td>Liste des jobs</td></tr>
+        <tr><td>POST</td><td><code>/api/v1/jobs/{name}/runs</code></td><td><strong>Déclencher un run</strong> <code>{"params": {…}}</code></td></tr>
+        <tr><td>GET</td><td><code>/api/v1/runs/{id}</code></td><td>Détail d'un run (statut, tâches, durées)</td></tr>
+        <tr><td>GET</td><td><code>/api/v1/runs/{id}/logs?task=…</code></td><td>Log d'une tâche (ou du run)</td></tr>
+        <tr><td>POST</td><td><code>/api/v1/runs/{id}/cancel</code></td><td>Annuler un run</td></tr>
+        <tr><td>GET/PUT</td><td><code>/api/v1/jobs/{name}/code</code></td><td>Lire / modifier le code d'un job</td></tr>
+        <tr><td>GET/POST</td><td><code>/api/v1/web/{job}/{path}</code></td><td>Endpoint personnalisé (@endpoint)</td></tr>
+        <tr><td>GET</td><td><code>/api/v1/webhooks</code></td><td>Liste de tous les endpoints</td></tr>
+      </tbody>
+    </table>
+    <p>Swagger interactif : <a href="/api/docs" target="_blank">/api/docs</a> ·
+    ReDoc : <a href="/api/redoc" target="_blank">/api/redoc</a></p>
+  </section>
+
+  </div>
+</div>
+<script>
+// Scrollspy: highlight the current section in the TOC.
+(function () {
+  var links = {};
+  document.querySelectorAll(".docs-toc a").forEach(function (a) {
+    links[a.getAttribute("href").slice(1)] = a;
+  });
+  var current = null;
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) {
+      if (e.isIntersecting) {
+        if (current) current.classList.remove("active");
+        current = links[e.target.id];
+        if (current) current.classList.add("active");
+      }
+    });
+  }, {rootMargin: "-15% 0px -75% 0px"});
+  document.querySelectorAll(".docs-body section").forEach(function (s) { io.observe(s); });
+})();
+</script>
+{% endblock %}

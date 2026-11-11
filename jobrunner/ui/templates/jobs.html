@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <h1>Jobs</h1>
+  <a class="button" href="/jobs/new_job/edit">+ New job</a>
+</div>
+{% if not jobs %}
+<p class="muted">No jobs found. Drop a <code>.py</code> file into the jobs directory or create one with the editor.</p>
+{% else %}
+<table>
+  <thead>
+    <tr><th>Job</th><th>Description</th><th>Schedule</th><th>Tasks</th><th>Last run</th><th></th></tr>
+  </thead>
+  <tbody>
+  {% for item in jobs %}
+    {% set res = item.res %}
+    <tr>
+      <td><a href="/jobs/{{ res.name }}"><strong>{{ res.name }}</strong></a>
+        {% if res.error %}<span class="badge s-failed" title="{{ res.error }}">load error</span>{% endif %}
+      </td>
+      <td class="muted">{{ res.job.description if res.job else "—" }}</td>
+      <td><code>{{ res.job.schedule if res.job and res.job.schedule else "—" }}</code></td>
+      <td>{{ res.job.tasks|length if res.job else "—" }}</td>
+      <td>
+        {% if item.last_run %}
+        <a href="/runs/{{ item.last_run.id }}"><span class="badge s-{{ item.last_run.status }}">{{ item.last_run.status }}</span></a>
+        <span class="muted"> {{ item.last_run.queued_at.strftime("%Y-%m-%d %H:%M") if item.last_run.queued_at }}</span>
+        {% else %}<span class="muted">never</span>{% endif %}
+      </td>
+      <td class="actions">
+        <a href="/jobs/{{ res.name }}/edit">Edit</a>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

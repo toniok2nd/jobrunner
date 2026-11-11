@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head"><h1>API tokens</h1></div>
+
+{% if new_token %}
+<div class="alert ok-alert">
+  <strong>Token created.</strong> Copy it now — it will not be shown again:<br>
+  <code class="token-value">{{ new_token }}</code>
+</div>
+{% endif %}
+
+<form method="post" action="/tokens" class="filters">
+  <input type="text" name="label" placeholder="label (e.g. ci-pipeline)" required>
+  <button type="submit" class="primary">Create token</button>
+</form>
+
+{% if not tokens %}
+<p class="muted">No tokens yet.</p>
+{% else %}
+<table>
+  <thead><tr><th>Label</th><th>Created</th><th>Status</th><th></th></tr></thead>
+  <tbody>
+  {% for t in tokens %}
+    <tr>
+      <td>{{ t.label }}</td>
+      <td class="muted">{{ t.created_at.strftime("%Y-%m-%d %H:%M") if t.created_at }}</td>
+      <td>{% if t.revoked %}<span class="badge s-cancelled">revoked</span>{% else %}<span class="badge s-success">active</span>{% endif %}</td>
+      <td class="actions">
+        {% if not t.revoked %}
+        <form method="post" action="/tokens/{{ t.id }}/revoke" class="inline">
+          <button type="submit" class="link">revoke</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<h2>Usage</h2>
+<p><button type="button" class="copy-btn" data-cmd="{{ usage_cmd }}" onclick="copyCmd(this)">Copy curl command</button></p>
+<pre class="log">{{ usage_cmd }}</pre>
+{% endblock %}

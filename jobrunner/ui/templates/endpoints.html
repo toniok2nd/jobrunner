@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Endpoints - jobrunner{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Endpoints</h1></div>
+<p class="muted">
+  Every <code>@endpoint</code> declared in a job file is callable at
+  <code>/api/v1/web/&lt;file&gt;/&lt;path&gt;</code> with a bearer token, or testable right here.
+</p>
+
+<h2>New endpoint</h2>
+<form method="post" action="/endpoints/create" class="settings-form">
+  <label>File (job) it belongs to — existing name appends to that file, new name creates it
+    <input type="text" name="file" list="job-files" placeholder="e.g. etl_daily" required>
+    <datalist id="job-files">
+      {% for f in job_files %}<option value="{{ f }}">{% endfor %}
+    </datalist>
+  </label>
+  <label>Endpoint path
+    <input type="text" name="path" placeholder="e.g. deploy or ping" required>
+  </label>
+  <button type="submit" class="primary">Create endpoint</button>
+</form>
+
+{% if not endpoints %}
+<p class="muted">No endpoints yet.</p>
+{% else %}
+<table>
+  <thead><tr><th>File</th><th>Path</th><th>Handler</th><th>curl</th><th></th></tr></thead>
+  <tbody>
+  {% for ep in endpoints %}
+    <tr>
+      <td><a href="/jobs/{{ ep.job }}">{{ ep.job }}</a></td>
+      <td><code>{{ ep.path }}</code></td>
+      <td class="muted">{{ ep.handler }}()</td>
+      <td><code class="curl-cmd">{{ ep.curl }}</code>
+          <button type="button" class="copy-btn" data-cmd="{{ ep.curl }}" onclick="copyCmd(this)">Copy</button>
+      </td>
+      <td class="actions">
+        <button type="button" onclick="toggleTest('{{ ep.job }}', '{{ ep.path }}')">Test</button>
+        <a href="/jobs/{{ ep.job }}/edit">Edit</a>
+      </td>
+    </tr>
+    <tr id="test-{{ ep.job }}-{{ ep.path }}" hidden>
+      <td colspan="5">
+        <form onsubmit="callEndpoint(event, '{{ ep.job }}', '{{ ep.path }}')">
+          <div class="filters">
+            <select name="http_method">
+              <option value="POST">POST</option>
+              <option value="GET">GET</option>
+            </select>
+            <textarea name="params" rows="2" spellcheck="false" placeholder='{"key": "value"} — JSON body for POST, query params for GET'></textarea>
+            <button type="submit" class="primary">Call</button>
+          </div>
+        </form>
+        <pre class="log" id="result-{{ ep.job }}-{{ ep.path }}" style="max-height:200px"></pre>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<script>
+function toggleTest(job, path) {
+  var row = document.getElementById("test-" + job + "-" + path);
+  row.hidden = !row.hidden;
+}
+async function callEndpoint(ev, job, path) {
+  ev.preventDefault();
+  var form = ev.target;
+  var out = document.getElementById("result-" + job + "-" + path);
+  var params = {};
+  try {
+    params = form.params.value.trim() ? JSON.parse(form.params.value) : {};
+  } catch (e) {
+    out.textContent = "Invalid params JSON: " + e;
+    return;
+  }
+  var method = form.http_method.value;
+  out.textContent = method + " calling…";
+  var resp;
+  if (method === "GET") {
+    var qs = new URLSearchParams(params).toString();
+    resp = await fetch("/endpoints/" + job + "/" + path + "/call" + (qs ? "?" + qs : ""));
+  } else {
+    resp = await fetch("/endpoints/" + job + "/" + path + "/call", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({params: params}),
+    });
+  }
+  var data = await resp.json().catch(() => ({}));
+  out.textContent = (resp.ok ? "OK " + method + " " : "HTTP " + resp.status + " ") +
+                    JSON.stringify(data.detail || data, null, 2);
+}
+</script>
+{% endblock %}

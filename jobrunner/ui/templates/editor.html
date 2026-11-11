@@ -1,0 +1,428 @@
+{% extends "base.html" %}
+{% block title %}Edit {{ name }} - jobrunner{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Edit <code>{{ name }}.py</code></h1>
+  <div>
+    <button id="save-btn" class="primary" type="button">Save</button>
+    <a class="button" href="{{ back_url or '/jobs/' ~ name }}">Back</a>
+  </div>
+</div>
+
+<link rel="stylesheet" href="/static/vendor/codemirror.min.css">
+<link rel="stylesheet" href="/static/vendor/material-darker.min.css">
+<link rel="stylesheet" href="/static/vendor/show-hint.css">
+<link rel="stylesheet" href="/static/vendor/dialog.css">
+<script src="/static/vendor/codemirror.min.js"></script>
+<script src="/static/vendor/python.min.js"></script>
+<script src="/static/vendor/show-hint.js"></script>
+<script src="/static/vendor/dialog.js"></script>
+<script src="/static/vendor/searchcursor.js"></script>
+<script src="/static/vendor/search.js"></script>
+
+<div id="editor-wrap">
+  <textarea id="src" class="editor-fallback" spellcheck="false">{{ source }}</textarea>
+</div>
+<p class="muted shortcuts-hint">
+  F12 / Ctrl+B / Ctrl+G D / Ctrl+Click: go to definition &middot; Alt+&larr; / Ctrl+] / Alt+]: back &middot; Ctrl+Space: autocomplete
+</p>
+<div id="libsrc-backdrop" hidden></div>
+<div id="libsrc-pane" hidden>
+  <div class="libsrc-head">
+    <span>Definition: <code id="libsrc-title"></code></span>
+    <span class="libsrc-tools">
+      <button type="button" id="libsrc-zoom-out" title="Fewer lines">Rows −</button>
+      <button type="button" id="libsrc-zoom-in" title="More lines">Rows +</button>
+      <button type="button" id="libsrc-search" title="Search (Ctrl+F)">🔍</button>
+      <button type="button" id="libsrc-close">Close (Alt+&larr;)</button>
+    </span>
+  </div>
+  <div id="libsrc-editor"></div>
+  <div class="libsrc-foot muted">Ctrl+F: search &middot; F3 / Shift+F3: next / previous &middot; F12 / Ctrl+G D / Ctrl+Click: go to definition &middot; Alt+&larr; / Ctrl+] / Alt+]: back &middot; Esc / clic sur le fond: close</div>
+</div>
+<p id="save-status" class="muted"></p>
+
+<script>
+// Progressive enhancement: swap the plain textarea for CodeMirror (served
+// locally from /static/vendor, no internet needed). If the scripts fail for
+// any reason, the textarea stays fully usable.
+
+// --- Autocompletion -------------------------------------------------------
+// Sources: Python keywords/builtins, the jobrunner DSL API, and words
+// already present in the document.
+var PY_WORDS = ("def return if elif else for while try except finally with as import from " +
+  "class lambda pass break continue raise assert yield global nonlocal del in is not and or " +
+  "True False None print len range str int float bool list dict set tuple open type isinstance " +
+  "enumerate zip sum min max abs round sorted map filter time sleep json math os sys").split(" ");
+
+var DSL_HINTS = [
+  {text: "from jobrunner.dsl import task", display: "from jobrunner.dsl import task"},
+  {text: "@task\ndef ", display: "@task — nouvelle tâche"},
+  {text: "@task(depends_on=[", display: "@task(depends_on=[...]) — tâche avec dépendances"},
+  {text: "@endpoint('", display: "@endpoint('path') — endpoint HTTP personnalisé"},
+  {text: "from jobrunner.dsl import task, endpoint", display: "from jobrunner.dsl import task, endpoint"},
+  {text: "task", display: "task (décorateur)"},
+  {text: "endpoint", display: "endpoint (décorateur)"},
+  {text: "depends_on", display: "depends_on=[tâches]"},
+  {text: "ctx.log('')", display: "ctx.log(message)"},
+  {text: "ctx.params['']", display: "ctx.params['clé']"},
+  {text: "ctx.run_id", display: "ctx.run_id"},
+  {text: "schedule = '0 2 * * *'", display: "schedule = <cron>"},
+  {text: "default_params = {}", display: "default_params = {...}"},
+  {text: "description = ''", display: "description = ..."},
+];
+
+// Async hint helper (options.async): dotted context (`time.sle`) asks the
+// server for the object's real methods/attributes; plain words use the
+// local keyword/DSL/document lists.
+CodeMirror.registerHelper("hint", "jobrunner", function (editor, callback, options) {
+  var cur = editor.getCursor();
+  var line = editor.getLine(cur.line);
+  var before = line.slice(0, cur.ch);
+
+  // --- dotted context: object attributes -------------------------------
+  var dot = before.match(/([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\.(\w*)$/);
+  if (dot) {
+    var objPath = dot[1];
+    var partial = dot[2];
+    var from = CodeMirror.Pos(cur.line, cur.ch - partial.length);
+    fetch("/jobs/{{ name }}/pyattrs?symbol=" + encodeURIComponent(objPath))
+      .then(function (resp) { return resp.ok ? resp.json() : {members: []}; })
+      .then(function (data) {
+        var list = [];
+        (data.members || []).forEach(function (mem) {
+          if (partial && mem.name.toLowerCase().indexOf(partial.toLowerCase()) !== 0) return;
+          list.push({
+            text: mem.name,
+            displayText: mem.name + (mem.signature || "") +
+                         (mem.doc ? "  —  " + mem.doc : ""),
+            className: mem.kind === "function" ? "hint-method" : "hint-attr",
+          });
+        });
+        callback({list: list, from: from, to: cur});
+      })
+      .catch(function () { callback({list: [], from: cur, to: cur}); });
+    return;
+  }
+
+  // --- plain-word context: keywords + DSL + document words -------------
+  var end = cur.ch, start = end;
+  while (start > 0 && /[\w.]/.test(line.charAt(start - 1))) start--;
+  var prefix = line.slice(start, end).toLowerCase();
+
+  var docWords = {}, match, re = /[A-Za-z_]\w{2,}/g, doc = editor.getValue();
+  while ((match = re.exec(doc)) !== null) docWords[match[0]] = true;
+
+  var list = [];
+  function add(text, display, cls) {
+    if (!prefix || text.toLowerCase().indexOf(prefix) === 0) {
+      list.push({text: text, displayText: display || text, className: cls});
+    }
+  }
+  PY_WORDS.forEach(function (w) { add(w, null, "hint-kw"); });
+  DSL_HINTS.forEach(function (h) { add(h.text, h.display, "hint-dsl"); });
+  Object.keys(docWords).forEach(function (w) { add(w, null, "hint-word"); });
+
+  callback({list: list, from: CodeMirror.Pos(cur.line, start), to: CodeMirror.Pos(cur.line, end)});
+});
+// CM5 async completion must be marked ON THE HELPER FUNCTION — the
+// show-hint addon checks hintFn.async, not the options object.
+CodeMirror.hint.jobrunner.async = true;
+
+// --- Go to definition (recursive) --------------------------------------------
+// F12 / Ctrl-B / Ctrl+Click: jump to the definition of the word under the
+// cursor. Works in the main editor AND inside the read-only library pane, so
+// you can jump source -> module -> submodule endlessly.
+// Alt-Left walks the navigation stack back across documents.
+var NAV = [];          // unified stack: {target: 'main-pos'|'lib-pos'|'lib-doc', ...}
+var libEditor = null;
+var libCurrent = null; // {filename, source, line, module} currently displayed
+var libPane = document.getElementById("libsrc-pane");
+var libBackdrop = document.getElementById("libsrc-backdrop");
+var status = document.getElementById("save-status");
+
+function wordUnderCursor(cm) {
+  var cur = cm.getCursor();
+  var line = cm.getLine(cur.line);
+  var start = cur.ch, end = cur.ch;
+  while (start > 0 && /[\w.]/.test(line.charAt(start - 1))) start--;
+  while (end < line.length && /[\w.]/.test(line.charAt(end))) end++;
+  return line.slice(start, end).replace(/^\.+|\.+$/g, "");  // e.g. "json.tool"
+}
+
+var DEF_PATTERNS_FOR = function (word) {
+  return [
+    new RegExp("^\\s*(?:def|class)\\s+" + word + "\\b"),   // def / class
+    new RegExp("^\\s*" + word + "\\s*="),                   // assignment
+  ];
+};
+
+// In-file definition search shared by both editors. Returns the match or null.
+function findDefInCm(cm, symbol) {
+  var word = symbol.split(".").pop();
+  if (!word) return null;
+  var cursorLine = cm.getCursor().line;
+  var patterns = DEF_PATTERNS_FOR(word);
+  for (var p = 0; p < patterns.length; p++) {
+    for (var i = 0; i < cm.lineCount(); i++) {
+      var m = cm.getLine(i).match(patterns[p]);
+      if (m && i !== cursorLine) return {line: i, ch: m.index + m[0].indexOf(word)};
+    }
+  }
+  return null;
+}
+
+// --- Library pane: visible-line count + in-document search -------------------
+var LIB_LINES = 18;          // rows shown in the read-only definition pane
+var LIB_LINES_MIN = 8, LIB_LINES_MAX = 60;
+
+function setLibLines(n) {
+  LIB_LINES = Math.max(LIB_LINES_MIN, Math.min(LIB_LINES_MAX, n));
+  if (!libEditor) return;
+  var fromLines = Math.round(LIB_LINES * libEditor.defaultTextHeight()) + 12;
+  var maxPx = Math.round(window.innerHeight * 0.80);  // pane is full-page: cap height
+  libEditor.setSize("100%", Math.min(fromLines, maxPx) + "px");
+  libEditor.refresh();
+}
+
+document.getElementById("libsrc-zoom-in").addEventListener("click", function () {
+  setLibLines(LIB_LINES + 4);
+});
+document.getElementById("libsrc-zoom-out").addEventListener("click", function () {
+  setLibLines(LIB_LINES - 4);
+});
+document.getElementById("libsrc-search").addEventListener("click", function () {
+  if (libEditor) { libEditor.focus(); libEditor.execCommand("find"); }
+});
+
+function renderLibDoc(data) {
+  document.getElementById("libsrc-title").textContent =
+    data.filename + ":" + data.line;
+  libPane.hidden = false;
+  libBackdrop.hidden = false;
+  if (!libEditor) {
+    libEditor = CodeMirror(document.getElementById("libsrc-editor"), {
+      mode: "python", theme: "material-darker", lineNumbers: true,
+      readOnly: true, extraKeys: {
+        F12: gotoDefinitionLib, "Ctrl-B": gotoDefinitionLib,
+        "Ctrl-G D": gotoDefinitionLib,
+        "Alt-Left": goBack, "Ctrl-]": goBack, "Alt-]": goBack, Esc: closePane,
+        "Ctrl-F": "find", "Cmd-F": "find",
+        F3: "findNext", "Shift-F3": "findPrev",
+      },
+    });
+    attachNavKeys(libEditor);
+    libEditor.setSize("100%", "400px");  // replaced by setLibLines() right below
+    libEditor.on("mousedown", function (cm, ev) {
+      if (ev.ctrlKey || ev.metaKey) {
+        cm.setCursor(cm.coordsChar({left: ev.pageX, top: ev.pageY}, "page"));
+        gotoDefinitionLib();
+        ev.preventDefault();
+      }
+    });
+    setLibLines(LIB_LINES);
+  }
+  libEditor.setValue(data.source);
+  if (data.line) {
+    libEditor.addLineClass(data.line - 1, "background", "libsrc-defline");
+    libEditor.setCursor({line: data.line - 1, ch: 0});
+    libEditor.scrollIntoView({line: Math.max(0, data.line - 3), ch: 0},
+      libEditor.getScrollInfo().clientHeight / 3);
+  }
+  libCurrent = data;
+  libEditor.focus();
+}
+
+function fetchLib(candidates, origin) {
+  var symbol = candidates[0];
+  status.textContent = "Looking up '" + symbol + "'…";
+  status.className = "muted";
+  fetch("/jobs/{{ name }}/libsrc?symbol=" + encodeURIComponent(symbol))
+    .then(function (resp) {
+      if (resp.status === 404) {
+        if (candidates.length > 1) return fetchLib(candidates.slice(1), origin);
+        status.textContent = "No definition found for '" + symbol + "'.";
+        status.className = "error";
+        return;
+      }
+      if (!resp.ok) throw new Error(resp.statusText);
+      return resp.json();
+    })
+    .then(function (data) {
+      if (!data) return;
+      status.textContent = "";
+      // Push back-marker before replacing the view
+      if (origin === "main" && editor) {
+        NAV.push({target: "main-pos", pos: editor.getCursor(),
+                  scroll: {left: editor.getScrollInfo().left, top: editor.getScrollInfo().top}});
+      } else if (origin === "lib" && libCurrent) {
+        NAV.push({target: "lib-doc", doc: libCurrent});
+      }
+      renderLibDoc(data);
+    })
+    .catch(function () {
+      status.textContent = "Lookup failed (network error).";
+      status.className = "error";
+    });
+}
+
+function gotoDefinition() {
+  if (!editor) return;
+  var word = wordUnderCursor(editor);
+  if (!word) return;
+  var hit = findDefInCm(editor, word);
+  if (hit) {
+    NAV.push({target: "main-pos", pos: editor.getCursor(),
+              scroll: {left: editor.getScrollInfo().left, top: editor.getScrollInfo().top}});
+    editor.focus();
+    editor.setCursor(hit);
+    return;
+  }
+  fetchLib([word], "main");
+}
+
+function gotoDefinitionLib() {
+  if (!libEditor) return;
+  var word = wordUnderCursor(libEditor);
+  if (!word) return;
+  var hit = findDefInCm(libEditor, word);
+  if (hit) {
+    NAV.push({target: "lib-pos", pos: libEditor.getCursor(),
+              scroll: {left: libEditor.getScrollInfo().left, top: libEditor.getScrollInfo().top}});
+    libEditor.focus();
+    libEditor.setCursor(hit);
+    return;
+  }
+  // Contextual resolution: inside module M, try M.<word> before bare <word>.
+  var candidates = [word];
+  if (libCurrent && libCurrent.module) {
+    var scoped = libCurrent.module + "." + word.split(".").pop();
+    candidates.unshift(scoped);
+  }
+  fetchLib(candidates, "lib");
+}
+
+function goBack() {
+  var entry = NAV.pop();
+  if (!entry) {
+    if (!libPane.hidden) closePane();
+    return;
+  }
+  if (entry.target === "main-pos") {
+    closePane();
+    editor.setCursor(entry.pos);
+    editor.scrollTo(entry.scroll.left, entry.scroll.top);
+    editor.focus();
+  } else if (entry.target === "lib-pos") {
+    libEditor.setCursor(entry.pos);
+    libEditor.scrollTo(entry.scroll.left, entry.scroll.top);
+    libEditor.focus();
+  } else if (entry.target === "lib-doc") {
+    renderLibDoc(entry.doc);  // restores the whole previous document
+  }
+}
+
+// Layout-proof back navigation: CodeMirror's keymap already handles Ctrl+]
+// in extraKeys (it marks the DOM event defaultPrevented when a binding
+// matches). This DOM-level fallback catches what the keymap misses — e.g.
+// Ctrl+] on AZERTY layouts where ] needs AltGr — plus Alt+]. Skipped when
+// CodeMirror already handled the key.
+function attachNavKeys(cm) {
+  cm.getWrapperElement().addEventListener("keydown", function (ev) {
+    if (ev.defaultPrevented) return;
+    var isBack = (ev.ctrlKey || ev.metaKey || ev.altKey) &&
+                 (ev.key === "]" || ev.code === "BracketRight");
+    if (isBack) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      goBack();
+    }
+  });
+}
+
+function closePane() {
+  libPane.hidden = true;
+  libBackdrop.hidden = true;
+  libCurrent = null;
+  NAV = NAV.filter(function (e) { return e.target === "main-pos"; });
+  if (editor) editor.focus();
+}
+
+document.getElementById("libsrc-close").addEventListener("click", closePane);
+libBackdrop.addEventListener("click", closePane);
+
+// --- Editor ----------------------------------------------------------------
+var textarea = document.getElementById("src");
+var editor = null;
+if (window.CodeMirror) {
+  try {
+    editor = CodeMirror.fromTextArea(textarea, {
+      mode: "python",
+      theme: "material-darker",
+      lineNumbers: true,
+      indentUnit: 4,
+      tabSize: 4,
+      indentWithTabs: false,
+      extraKeys: {
+        Tab: function (cm) { cm.execCommand("indentMore"); },
+        "Shift-Tab": function (cm) { cm.execCommand("indentLess"); },
+        "Ctrl-Space": "autocomplete",
+        F12: gotoDefinition,
+        "Ctrl-B": gotoDefinition,
+        "Ctrl-G D": gotoDefinition,
+        "Alt-Left": goBack, "Ctrl-]": goBack,
+      },
+      hintOptions: {hint: CodeMirror.hint.jobrunner, completeSingle: false, async: true},
+    });
+    editor.setSize("100%", "60vh");
+    attachNavKeys(editor);
+    // auto-popup while typing word characters
+    editor.on("inputRead", function (cm, change) {
+      if (change.text.length === 1 && /[\w.]/.test(change.text[0]) && !cm.state.completionActive) {
+        cm.showHint({hint: CodeMirror.hint.jobrunner, completeSingle: false, async: true});
+      }
+    });
+    // Ctrl+Click (Cmd+Click on macOS) jumps to definition
+    editor.on("mousedown", function (cm, ev) {
+      if (ev.ctrlKey || ev.metaKey) {
+        cm.setCursor(cm.coordsChar({left: ev.pageX, top: ev.pageY}, "page"));
+        gotoDefinition();
+        ev.preventDefault();
+      }
+    });
+  } catch (e) {
+    editor = null;  // fall back to the plain textarea
+  }
+}
+
+document.getElementById("save-btn").addEventListener("click", async function () {
+  status.textContent = "Saving…";
+  status.className = "muted";
+  var source = editor ? editor.getValue() : textarea.value;
+  try {
+    var resp = await fetch("{{ save_url or ('/jobs/' ~ name ~ '/code') }}", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({source: source}),
+    });
+    if (resp.ok) {
+      var data = await resp.json();
+      if (data.load_error) {
+        status.textContent = "Saved, but the job fails to load: " + data.load_error;
+        status.className = "error";
+      } else {
+        status.textContent = "Saved (" + new Date().toLocaleTimeString() + ")";
+        status.className = "ok";
+      }
+    } else {
+      var err = await resp.json().catch(() => ({}));
+      status.textContent = "Not saved: " + (err.detail || resp.statusText);
+      status.className = "error";
+    }
+  } catch (e) {
+    status.textContent = "Not saved: network error";
+    status.className = "error";
+  }
+});
+</script>
+{% endblock %}

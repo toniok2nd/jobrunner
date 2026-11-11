@@ -1,0 +1,20 @@
+# Convenience only — the plain image is fully self-contained:
+#   docker build -t jobrunner . && docker run -p 8080:8080 jobrunner
+services:
+  jobrunner:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      JOBRUNNER_ADMIN_USER: admin
+      JOBRUNNER_ADMIN_PASSWORD: change-me
+      JOBRUNNER_SECRET_KEY: change-me-to-a-long-random-string
+      JOBRUNNER_ENABLE_BEAT: "true"
+    volumes:
+      - jobrunner-jobs:/srv/jobrunner/jobs
+      - jobrunner-data:/srv/jobrunner/data
+    restart: unless-stopped
+
+volumes:
+  jobrunner-jobs:
+  jobrunner-data:

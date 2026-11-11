@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Libraries - jobrunner{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Shared libraries</h1>
+</div>
+<p class="muted">
+  Les fichiers du dossier <code>jobs/lib/</code> sont importables depuis <strong>n'importe quel job ou endpoint</strong>
+  avec <code>from &lt;nom&gt; import …</code>. Les modifications sont rechargées à chaud —
+  aucun redémarrage nécessaire. Le « go to definition » (F12) et l'autocomplétion y accèdent aussi.
+</p>
+
+<div class="settings-form">
+<form method="post" action="/libs/create" class="filters">
+  <input type="text" name="name" placeholder="my_utils (lettres, chiffres, _)" required>
+  <button type="submit" class="primary">+ New module</button>
+</form>
+</div>
+
+{% if not libs %}
+<p class="muted">No shared modules yet.</p>
+{% else %}
+<table>
+  <thead><tr><th>Module</th><th>Size</th><th>Modified</th><th></th></tr></thead>
+  <tbody>
+  {% for lib in libs %}
+    <tr>
+      <td><code>lib/{{ lib.name }}.py</code></td>
+      <td class="muted">{{ lib.size }} B</td>
+      <td class="muted">{{ lib.mtime }}</td>
+      <td class="actions"><a href="/libs/{{ lib.name }}/edit">Edit</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<h2>Exemple d'utilisation</h2>
+<div class="doc-code">
+  <pre># jobs/lib/my_utils.py
+def normalize(name: str) -> str:
+    return name.strip().lower()
+
+
+# dans un job ou un endpoint :
+from my_utils import normalize
+
+@task
+def clean(ctx):
+    ctx.log(normalize(ctx.params.get("name", "")))
+
+@endpoint("who")
+def who_handler(ctx):
+    return {"hello": normalize(ctx.params.get("name", "world"))}</pre>
+</div>
+{% endblock %}
