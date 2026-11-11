@@ -19,7 +19,10 @@
         {% if res.error %}<span class="badge s-failed" title="{{ res.error }}">load error</span>{% endif %}
       </td>
       <td class="muted">{{ res.job.description if res.job else "—" }}</td>
-      <td><code>{{ res.job.schedule if res.job and res.job.schedule else "—" }}</code></td>
+      <td><code>{{ item.schedule if item.schedule else "—" }}</code>
+        {% if item.schedule_source == "gui" %}<span class="badge s-warn" title="Cron overridden from the GUI">o/r</span>
+        {% elif item.schedule_source == "disabled" %}<span class="badge s-cancelled">off</span>{% endif %}
+      </td>
       <td>{{ res.job.tasks|length if res.job else "—" }}</td>
       <td>
         {% if item.last_run %}

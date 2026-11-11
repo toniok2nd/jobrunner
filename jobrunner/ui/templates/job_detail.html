@@ -18,8 +18,19 @@
 {% set job = res.job %}
 <p class="muted">{{ job.description or "No description." }}</p>
 <p>
-  {% if job.schedule %}Schedule: <code>{{ job.schedule }}</code>{% else %}No cron schedule (API/manual trigger).{% endif %}
+  Schedule:
+  {% if schedule_expr %}<code>{{ schedule_expr }}</code>
+    {% if schedule_source == "gui" %}<span class="badge s-warn">GUI override</span>{% endif %}
+  {% elif schedule_source == "disabled" %}<span class="badge s-cancelled">disabled (GUI)</span>
+  {% else %}<span class="muted">none (API/manual trigger)</span>{% endif %}
+  {% if job.schedule %}<span class="muted">· in code: <code>{{ job.schedule }}</code></span>{% endif %}
 </p>
+<form method="post" action="/jobs/{{ res.name }}/schedule" class="filters schedule-form">
+  <input type="text" id="sched-override-input" name="schedule" style="width: 220px"
+         placeholder="*/15 * * * * · off · empty = code value">
+  <button type="submit">Set schedule</button>
+  {% set cron_target = "#sched-override-input" %}{% include "partials/cron_help.html" %}
+</form>
 
 <h2>Task graph</h2>
 <table>

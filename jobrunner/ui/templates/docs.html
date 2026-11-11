@@ -149,6 +149,14 @@ def report(ctx):
     « minute heure jour mois jour-de-semaine » (UTC). Le planificateur tourne chaque minute
     et rattrape les occurrences manquées (sans rattrapage au premier démarrage).
     Désactivable globalement avec <code>JOBRUNNER_ENABLE_BEAT=false</code>.</p>
+    <p><strong>Édition depuis la GUI — deux niveaux</strong> : dans <em>l'éditeur de code</em>,
+    le champ <em>schedule (cron)</em> en haut réécrit la ligne <code>schedule = "…"</code>
+    du fichier source (vide = supprime la ligne ; validé comme du cron) ;
+    sur la <em>page du job</em>, le champ « Set schedule » définit une
+    <em>Set schedule</em> <strong>surcharge</strong> qui prend le pas sur le code sans le modifier (badge « GUI override ») —
+    une nouvelle expression cron pour la remplacer, <code>off</code> pour désactiver la planification,
+    ou vide pour revenir à la valeur du code. La surcharge est validée à la sauvegarde et
+    survit aux redémarrages.</p>
   </section>
 
   <section id="trigger">

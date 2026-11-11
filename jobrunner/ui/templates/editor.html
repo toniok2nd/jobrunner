@@ -3,7 +3,16 @@
 {% block content %}
 <div class="page-head">
   <h1>Edit <code>{{ name }}.py</code></h1>
-  <div>
+  <div class="editor-head-actions">
+    {% if show_schedule %}
+    <div class="schedule-field-wrap">
+      <label class="schedule-field">schedule (cron)
+        {% set cron_target = "#schedule-input" %}{% include "partials/cron_help.html" %}<input type="text" id="schedule-input" value="{{ code_schedule }}"
+               placeholder="0 2 * * * — vide = pas de cron"
+               title="Cron schedule written into the code (schedule = ...). Empty removes it.">
+      </label>
+    </div>
+    {% endif %}
     <button id="save-btn" class="primary" type="button">Save</button>
     <a class="button" href="{{ back_url or '/jobs/' ~ name }}">Back</a>
   </div>
@@ -143,7 +152,8 @@ var libEditor = null;
 var libCurrent = null; // {filename, source, line, module} currently displayed
 var libPane = document.getElementById("libsrc-pane");
 var libBackdrop = document.getElementById("libsrc-backdrop");
-var status = document.getElementById("save-status");
+var saveStatus = document.getElementById("save-status");
+window._codeScheduleBaseline = {{ (code_schedule or "") | tojson }};
 
 function wordUnderCursor(cm) {
   var cur = cm.getCursor();
@@ -239,14 +249,14 @@ function renderLibDoc(data) {
 
 function fetchLib(candidates, origin) {
   var symbol = candidates[0];
-  status.textContent = "Looking up '" + symbol + "'…";
-  status.className = "muted";
+  saveStatus.textContent = "Looking up '" + symbol + "'…";
+  saveStatus.className = "muted";
   fetch("/jobs/{{ name }}/libsrc?symbol=" + encodeURIComponent(symbol))
     .then(function (resp) {
       if (resp.status === 404) {
         if (candidates.length > 1) return fetchLib(candidates.slice(1), origin);
-        status.textContent = "No definition found for '" + symbol + "'.";
-        status.className = "error";
+        saveStatus.textContent = "No definition found for '" + symbol + "'.";
+        saveStatus.className = "error";
         return;
       }
       if (!resp.ok) throw new Error(resp.statusText);
@@ -254,7 +264,7 @@ function fetchLib(candidates, origin) {
     })
     .then(function (data) {
       if (!data) return;
-      status.textContent = "";
+      saveStatus.textContent = "";
       // Push back-marker before replacing the view
       if (origin === "main" && editor) {
         NAV.push({target: "main-pos", pos: editor.getCursor(),
@@ -265,8 +275,8 @@ function fetchLib(candidates, origin) {
       renderLibDoc(data);
     })
     .catch(function () {
-      status.textContent = "Lookup failed (network error).";
-      status.className = "error";
+      saveStatus.textContent = "Lookup failed (network error).";
+      saveStatus.className = "error";
     });
 }
 
@@ -400,32 +410,44 @@ if (window.CodeMirror) {
 }
 
 document.getElementById("save-btn").addEventListener("click", async function () {
-  status.textContent = "Saving…";
-  status.className = "muted";
+  saveStatus.textContent = "Saving…";
+  saveStatus.className = "muted";
   var source = editor ? editor.getValue() : textarea.value;
+  var payload = {source: source};
+  var schedInput = document.getElementById("schedule-input");
+  // only when modified vs the value the server rendered the page with
+  if (schedInput && schedInput.value !== window._codeScheduleBaseline) {
+    payload.schedule = schedInput.value;
+  }
   try {
     var resp = await fetch("{{ save_url or ('/jobs/' ~ name ~ '/code') }}", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({source: source}),
+      body: JSON.stringify(payload),
     });
     if (resp.ok) {
       var data = await resp.json();
+      // the server rewrote the schedule line inside the source: resync
+      if (data.resolved_source !== undefined) {
+        if (editor) editor.setValue(data.resolved_source);
+        else textarea.value = data.resolved_source;
+        window._codeScheduleBaseline = data.schedule || "";
+      }
       if (data.load_error) {
-        status.textContent = "Saved, but the job fails to load: " + data.load_error;
-        status.className = "error";
+        saveStatus.textContent = "Saved, but the job fails to load: " + data.load_error;
+        saveStatus.className = "error";
       } else {
-        status.textContent = "Saved (" + new Date().toLocaleTimeString() + ")";
-        status.className = "ok";
+        saveStatus.textContent = "Saved (" + new Date().toLocaleTimeString() + ")";
+        saveStatus.className = "ok";
       }
     } else {
       var err = await resp.json().catch(() => ({}));
-      status.textContent = "Not saved: " + (err.detail || resp.statusText);
-      status.className = "error";
+      saveStatus.textContent = "Not saved: " + (err.detail || resp.statusText);
+      saveStatus.className = "error";
     }
   } catch (e) {
-    status.textContent = "Not saved: network error";
-    status.className = "error";
+    saveStatus.textContent = "Not saved: network error";
+    saveStatus.className = "error";
   }
 });
 </script>

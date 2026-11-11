@@ -1,6 +1,7 @@
 """Shared business logic used by both the REST API and the UI routes."""
 
 import ast
+import json
 import re
 from pathlib import Path
 
@@ -183,6 +184,134 @@ def _collapse_blank_runs(lines: list[str]) -> str:
                 continue
         out.append(line)
     return "".join(out)
+
+
+def set_schedule_in_source(source: str, expr: str | None) -> str:
+    """Write/remove the module-level `schedule = "..."` line in a job source
+    file (line-splicing, AST-guided — comments & formatting preserved).
+
+    expr None or ""  -> remove the schedule line entirely.
+    expr "*/5 * * *" -> replace the existing line, or insert it after the
+                        module docstring/imports if absent.
+    Raises JobValidationError on invalid cron.
+    """
+    expr = (expr or "").strip()
+    if expr:
+        from croniter import croniter
+
+        if not croniter.is_valid(expr):
+            raise JobValidationError(
+                f"invalid cron expression {expr!r} — e.g. '*/15 * * * *' or empty to remove"
+            )
+
+    tree = ast.parse(source)
+    lines = source.splitlines(keepends=True)
+
+    assign = None
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+            isinstance(t, ast.Name) and t.id == "schedule" for t in node.targets
+        ):
+            assign = node
+            break
+
+    if not expr:
+        if assign is None:
+            return source  # nothing to remove
+        new_lines = lines[: assign.lineno - 1] + lines[assign.end_lineno :]
+        return _collapse_blank_runs(new_lines)
+
+    new_line = f'schedule = {json.dumps(expr)}\n'
+    if assign is not None:
+        if assign.end_lineno == assign.lineno:
+            lines[assign.lineno - 1] = new_line
+        else:  # multi-line assignment: slice out and replace
+            lines = lines[: assign.lineno - 1] + [new_line] + lines[assign.end_lineno :]
+        return "".join(lines)
+
+    # no existing schedule line: insert after docstring + import block
+    insert_at = 1  # 1-based line index to insert BEFORE
+    body = list(tree.body)
+    idx = 0
+    if body and isinstance(body[0], ast.Expr) and isinstance(
+        getattr(body[0], "value", None), ast.Constant
+    ) and isinstance(body[0].value.value, str):
+        idx = body[0].end_lineno  # skip module docstring
+    else:
+        idx = 0
+    while idx < len(lines) and (
+        lines[idx].strip().startswith(("import ", "from ", "#")) or not lines[idx].strip()
+    ):
+        idx += 1
+    new_lines = lines[:idx] + ["\n" if idx and lines[idx - 1].strip() else "",
+                               new_line, "\n"] + lines[idx:]
+    return "".join(new_lines)
+
+
+# --- cron schedule overrides (GUI-editable) --------------------------------
+
+_SCHEDULE_KV_PREFIX = "schedule."
+SCHEDULE_OFF = "off"
+
+
+def _kv() -> dict:
+    from .db import SessionLocal
+    from .models import MetaKV
+
+    with SessionLocal() as session:
+        return {row.key: row.value for row in session.query(MetaKV).all()}
+
+
+def get_schedule_override(job_name: str, kv: dict | None = None) -> str | None:
+    kv = kv if kv is not None else _kv()
+    return kv.get(_SCHEDULE_KV_PREFIX + job_name)
+
+
+def set_schedule_override(job_name: str, value: str) -> None:
+    """Empty = use the schedule from code. 'off' = disable scheduling.
+    Anything else must be a valid 5-field cron expression."""
+    from .db import SessionLocal
+    from .models import MetaKV
+
+    value = (value or "").strip()
+    if value and value.lower() != SCHEDULE_OFF:
+        try:
+            from croniter import croniter
+
+            if not croniter.is_valid(value):
+                raise ValueError(value)
+        except Exception:
+            raise JobValidationError(
+                f"invalid cron expression {value!r} — expected e.g. "
+                f"'*/15 * * * *', or 'off' to disable, or empty to use the code value"
+            )
+
+    key = _SCHEDULE_KV_PREFIX + job_name
+    with SessionLocal() as session:
+        row = session.get(MetaKV, key)
+        if not value:
+            if row is not None:
+                session.delete(row)
+        else:
+            canonical = SCHEDULE_OFF if value.lower() == SCHEDULE_OFF else value
+            if row is None:
+                session.add(MetaKV(key=key, value=canonical))
+            else:
+                row.value = canonical
+        session.commit()
+
+
+def effective_schedule(job, kv: dict | None = None) -> tuple:
+    """Returns (schedule_or_None, source) where source is
+    'gui' / 'disabled' / 'code' / 'none'."""
+    override = get_schedule_override(job.name, kv)
+    if override == SCHEDULE_OFF:
+        return None, "disabled"
+    if override:
+        return override, "gui"
+    if job.schedule:
+        return job.schedule, "code"
+    return None, "none"
 
 
 # --- custom endpoints (webhooks) -----------------------------------------

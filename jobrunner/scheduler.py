@@ -32,13 +32,18 @@ def scheduler_tick() -> None:
             return
         last = datetime.fromisoformat(row.value)
 
+    from .services import effective_schedule
+
     registry = load_registry()
     for res in registry.values():
         job = res.job
-        if job is None or not job.schedule:
+        if job is None:
+            continue
+        schedule_expr, _src = effective_schedule(job)
+        if not schedule_expr:
             continue
         try:
-            itr = croniter(job.schedule, last)
+            itr = croniter(schedule_expr, last)
             nxt = itr.get_next(datetime)
             while nxt <= now:
                 with SessionLocal() as session:

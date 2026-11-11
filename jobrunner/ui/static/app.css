@@ -93,6 +93,47 @@ button.danger { background: var(--fail); border-color: var(--fail); color: #fff;
 button.link { background: none; border: none; color: var(--accent); padding: 0; font-size: 13px; }
 button.danger-link { color: var(--fail); }
 .actions .inline { margin-left: 10px; }
+.editor-head-actions { display: flex; align-items: flex-end; gap: 10px; }
+.schedule-field { margin-bottom: 0; }
+.schedule-field input { width: 190px; }
+.schedule-field-wrap { position: relative; }
+.schedule-form { position: relative; }
+
+/* cron help popover */
+.help-link {
+  color: var(--accent);
+  text-decoration: underline dotted;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.cron-help {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 60;
+  margin-top: 6px;
+  max-width: 360px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  box-shadow: 0 14px 40px rgba(0,0,0,.55);
+}
+.cron-diagram {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  line-height: 1.45;
+  margin: 0 0 8px;
+  white-space: pre;
+}
+.cron-examples button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  margin-top: 4px;
+  padding: 5px 8px;
+}
+.cron-examples button:hover { border-color: var(--accent); }
 button:hover { opacity: .88; }
 
 form.inline { display: inline; }

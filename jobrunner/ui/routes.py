@@ -92,6 +92,8 @@ def jobs_page(
     user: str = Depends(require_user),
     db: Session = Depends(get_db),
 ):
+    from ..services import effective_schedule
+
     registry = load_registry()
     jobs = []
     for res in registry.values():
@@ -101,7 +103,13 @@ def jobs_page(
             .order_by(JobRun.queued_at.desc())
             .limit(1)
         )
-        jobs.append({"res": res, "last_run": last_run})
+        sched, sched_source = (None, "none")
+        if res.job:
+            sched, sched_source = effective_schedule(res.job)
+        jobs.append(
+            {"res": res, "last_run": last_run,
+             "schedule": sched, "schedule_source": sched_source}
+        )
     return templates.TemplateResponse(
         "jobs.html", {"request": request, "user": user, "jobs": jobs}
     )
@@ -133,11 +141,33 @@ def job_detail_page(
             endpoint_rows.append(
                 {**ep, "curl": _curl_web_cmd(request, name, ep["path"])}
             )
+    from ..services import effective_schedule
+
+    schedule_expr, schedule_source = (None, "none")
+    if res.job:
+        schedule_expr, schedule_source = effective_schedule(res.job)
     return templates.TemplateResponse(
         "job_detail.html",
         {"request": request, "user": user, "res": res, "runs": runs,
-         "endpoint_rows": endpoint_rows},
+         "endpoint_rows": endpoint_rows,
+         "schedule_expr": schedule_expr, "schedule_source": schedule_source},
     )
+
+
+@router.post("/jobs/{name}/schedule")
+def job_schedule_save(
+    name: str,
+    schedule: str = Form(""),
+    user: str = Depends(require_user),
+):
+    try:
+        validate_job_name(name)
+        from ..services import set_schedule_override
+
+        set_schedule_override(name, schedule)
+    except JobValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return _redirect(f"/jobs/{name}")
 
 
 @router.post("/jobs/{name}/trigger")
@@ -160,6 +190,11 @@ def job_trigger(
     return _redirect(f"/runs/{run.id}")
 
 
+def _schedule_from_source(source: str) -> str:
+    m = re.search(r"^schedule\s*=\s*[\"']([^\"']*)[\"']", source, re.M)
+    return m.group(1) if m else ""
+
+
 @router.get("/jobs/{name}/edit", response_class=HTMLResponse)
 def editor_page(
     name: str,
@@ -174,9 +209,14 @@ def editor_page(
     source = res.source if res else (
         '"""New job."""\nfrom jobrunner.dsl import task\n\n\n@task\ndef main(ctx):\n    print("hello")\n'
     )
+    code_schedule = (
+        res.job.schedule if res and res.job and res.job.schedule
+        else _schedule_from_source(source)
+    )
     return templates.TemplateResponse(
         "editor.html",
-        {"request": request, "user": user, "name": name, "source": source},
+        {"request": request, "user": user, "name": name, "source": source,
+         "code_schedule": code_schedule, "show_schedule": True},
     )
 
 
@@ -188,12 +228,21 @@ async def editor_save(
 ):
     body = await request.json()
     source = body.get("source", "")
+    schedule_touched = "schedule" in body
     try:
+        if schedule_touched:  # edit the schedule line inside the source
+            from ..services import set_schedule_in_source
+
+            source = set_schedule_in_source(source, body.get("schedule"))
         save_job_code(name, source)
     except JobValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     res = load_registry().get(name)
-    return {"saved": True, "load_error": res.error if res else None}
+    resp = {"saved": True, "load_error": res.error if res else None}
+    if schedule_touched:
+        resp["resolved_source"] = source  # let the editor resync its buffer
+        resp["schedule"] = body.get("schedule") or ""
+    return resp
 
 
 # --- go-to-definition for the editor -------------------------------------
@@ -445,6 +494,7 @@ def libs_edit_page(name: str, request: Request, user: str = Depends(require_user
             "source": path.read_text(encoding="utf-8"),
             "save_url": f"/libs/{name}/code",
             "back_url": "/libs",
+            "show_schedule": False,
         },
     )
 
