@@ -1,10 +1,13 @@
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, HTTPException, Request, Security
+from fastapi.security import APIKeyHeader
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .db import SessionLocal
 from .models import ApiToken
 from .security import SESSION_COOKIE, hash_token, read_session_cookie
+
+_api_key_header = APIKeyHeader(name="Authorization", auto_error=False)
 
 
 class AuthRedirect(Exception):
@@ -41,16 +44,23 @@ def require_user(request: Request) -> str:
 
 
 def require_token(
-    request: Request, db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    authorization: str | None = Security(_api_key_header),
 ) -> ApiToken:
-    """Bearer-token auth for the job/run REST API."""
-    auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer "):
+    """Bearer-token auth for the job/run REST API.
+
+    Accepts "Bearer jr_…" or a bare "jr_…" (Swagger UI's Authorize button).
+    The APIKeyHeader security scheme makes the OpenAPI spec declare auth, so
+    /api/docs gets a working "Authorize" + "Try it out" flow.
+    """
+    if not authorization:
         raise HTTPException(status_code=401, detail="missing bearer token")
-    token_hash = hash_token(auth.removeprefix("Bearer ").strip())
+    value = authorization.strip()
+    if value.lower().startswith("bearer "):
+        value = value[7:].strip()
     row = db.scalar(
         select(ApiToken).where(
-            ApiToken.token_hash == token_hash, ApiToken.revoked.is_(False)
+            ApiToken.token_hash == hash_token(value), ApiToken.revoked.is_(False)
         )
     )
     if row is None:

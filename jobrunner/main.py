@@ -23,11 +23,37 @@ app = FastAPI(
     title="jobrunner",
     version="0.1.0",
     lifespan=lifespan,
-    # /docs belongs to the in-app guide; Swagger/OpenAPI moves under /api
-    docs_url="/api/docs",
-    redoc_url="/api/redoc",
+    # /docs belongs to the in-app guide; Swagger/OpenAPI moves under /api.
+    # Built-in docs disabled: we serve Swagger UI from vendored assets (offline).
+    docs_url=None,
+    redoc_url=None,
     openapi_url="/api/v1/openapi.json",
 )
+
+
+@app.get("/api/docs", include_in_schema=False)
+def swagger_ui():
+    from fastapi.openapi.docs import get_swagger_ui_html
+
+    return get_swagger_ui_html(
+        openapi_url="/api/v1/openapi.json",
+        title="jobrunner API",
+        swagger_js_url="/static/vendor/swagger-ui-bundle.js",
+        swagger_css_url="/static/vendor/swagger-ui.css",
+        swagger_favicon_url="/static/icon.svg",
+    )
+
+
+@app.get("/api/redoc", include_in_schema=False)
+def redoc_ui():
+    from fastapi.openapi.docs import get_redoc_html
+
+    return get_redoc_html(
+        openapi_url="/api/v1/openapi.json",
+        title="jobrunner API",
+        redoc_js_url="/static/vendor/redoc.standalone.js",
+        redoc_favicon_url="/static/icon.svg",
+    )
 
 _static_dir = Path(__file__).parent / "ui" / "static"
 app.mount("/static", StaticFiles(directory=_static_dir), name="static")
