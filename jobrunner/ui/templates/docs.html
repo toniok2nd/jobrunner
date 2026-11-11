@@ -33,7 +33,7 @@
 
   <section id="create-job">
     <h2>Créer un job</h2>
-    <p>Un fichier par job, dans le répertoire des jobs. Le nom du job = nom du fichier
+    <p>Un fichier par job, dans le répertoire des jobs. Suppression via le bouton <strong>Delete</strong> de la page Jobs ou du job (l'historique des runs est conservé). Le nom du job = nom du fichier
     (<code>etl_daily.py</code> → job <code>etl_daily</code>). Attributs de module optionnels :</p>
     {% set doc %}
 """Mon premier job"""
@@ -195,11 +195,18 @@ def deploy_handler(ctx):
       <pre>{{ doc | trim | forceescape }}</pre>
     </div>
     <ul>
-      <li>Gérez-les comme les jobs : page <a href="/endpoints">Endpoints</a> (créer, éditer, tester).</li>
+      <li>Gérez-les comme les jobs : page <a href="/endpoints">Endpoints</a> (créer, éditer, tester,
+          <strong>supprimer</strong> — seule la fonction de l'endpoint est retirée du fichier,
+          le reste est préservé à l'octet près).</li>
       <li>Codes de réponse : <code>200</code> succès · <code>404</code> job/endpoint inconnu ·
           <code>500</code> exception (traceback dans <code>log</code>) · <code>504</code> timeout.</li>
       <li><strong>Retourner autre chose que du JSON</strong> — une page HTML complète, du texte,
           un statut personnalisé : <code>html()</code> / <code>text()</code> (ci-dessous).</li>
+      <li><strong>Endpoint public</strong> (sans token) : <code>@endpoint("chemin", public=True)</code>
+          — badge « public » orange dans la GUI. ⚠️ À réserver aux données réellement publiques.</li>
+      <li><strong>Limiter la méthode HTTP</strong> : <code>methods=("GET",)</code> — l'endpoint n'accepte
+          que GET ; un POST reçoit <code>405 Method Not Allowed</code> (avec l'en-tête <code>Allow</code>).
+          Défaut : GET + POST. Le sélecteur du panneau Test s'adapte automatiquement.</li>
       <li>Le handler peut déclencher le DAG du job lui-même : voir <code>run-now</code> dans
         l'exemple <code>etl_daily</code>.</li>
     </ul>
@@ -218,7 +225,7 @@ def report_handler(ctx):
   <p><b>{rows}</b> lignes traitées — run {{ '{' }}ctx.run_id[:8]{{ '}' }}</p>
 </body></html>""")
 
-@endpoint("health-text")
+@endpoint("health-text", public=True, methods=["GET"])  # public, GET seulement
 def health_text(ctx):
     return text("OK\n", status=200, headers={"X-Custom": "yes"})
 {% endset %}

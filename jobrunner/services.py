@@ -92,6 +92,99 @@ def save_job_code(job_name: str, source: str) -> Path:
     return path
 
 
+# --- deletion -------------------------------------------------------------
+
+
+def delete_job_file(job_name: str) -> None:
+    validate_job_name(job_name)
+    path = Path(get_settings().jobs_dir) / f"{job_name}.py"
+    if not path.is_file():
+        raise JobValidationError(f"job '{job_name}' not found")
+    path.unlink()
+
+
+def delete_shared_lib(name: str) -> None:
+    validate_job_name(name)
+    path = Path(get_settings().jobs_dir) / "lib" / f"{name}.py"
+    if not path.is_file():
+        raise JobValidationError(f"module '{name}' not found")
+    path.unlink()
+
+
+def _endpoint_decorator_path(dec: ast.expr) -> str | None:
+    """If `dec` is an @endpoint("path", ...) decorator, return the path."""
+    call = dec if isinstance(dec, ast.Call) else None
+    func = call.func if call else dec
+    is_endpoint = (
+        (isinstance(func, ast.Name) and func.id == "endpoint")
+        or (isinstance(func, ast.Attribute) and func.attr == "endpoint")
+    )
+    if not is_endpoint or call is None or not call.args:
+        return None
+    first = call.args[0]
+    if isinstance(first, ast.Constant) and isinstance(first.value, str):
+        return first.value
+    return None
+
+
+def delete_endpoint_from_file(job_name: str, endpoint_path: str) -> None:
+    """Remove the @endpoint(path) function from the job file by line-span
+    splicing — AST-guided, but preserves comments/formatting elsewhere.
+    Rolls back if the result fails to parse or load."""
+    validate_job_name(job_name)
+    file_path = Path(get_settings().jobs_dir) / f"{job_name}.py"
+    if not file_path.is_file():
+        raise JobValidationError(f"job '{job_name}' not found")
+    source = file_path.read_text(encoding="utf-8")
+    lines = source.splitlines(keepends=True)
+
+    tree = ast.parse(source)
+    span = None
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            for dec in node.decorator_list:
+                if _endpoint_decorator_path(dec) == endpoint_path:
+                    start = min(d.lineno for d in node.decorator_list)
+                    span = (start, node.end_lineno)
+                    break
+        if span:
+            break
+    if span is None:
+        raise JobValidationError(
+            f"no @endpoint(\"{endpoint_path}\") found in '{job_name}.py'"
+        )
+
+    start, end = span  # 1-based, inclusive
+    new_lines = lines[: start - 1] + lines[end:]
+    new_source = _collapse_blank_runs(new_lines)
+    validate_python_source(new_source)
+
+    content_bytes = new_source.encode("utf-8")
+    tmp = file_path.with_suffix(".py.tmp")
+    tmp.write_bytes(content_bytes)
+    tmp.replace(file_path)
+
+    from .loader import load_job_file
+
+    result = load_job_file(file_path)
+    if result.error:
+        file_path.write_text(source, encoding="utf-8")  # rollback
+        raise JobValidationError(f"deletion would break the file: {result.error}")
+
+
+def _collapse_blank_runs(lines: list[str]) -> str:
+    out, blank = [], 0
+    for line in lines:
+        if line.strip():
+            blank = 0
+        else:
+            blank += 1
+            if blank > 2:
+                continue
+        out.append(line)
+    return "".join(out)
+
+
 # --- custom endpoints (webhooks) -----------------------------------------
 
 

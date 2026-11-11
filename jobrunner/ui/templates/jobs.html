@@ -29,6 +29,10 @@
       </td>
       <td class="actions">
         <a href="/jobs/{{ res.name }}/edit">Edit</a>
+        <form method="post" action="/jobs/{{ res.name }}/delete" class="inline"
+              onsubmit="return confirm('Delete job {{ res.name }} (file {{ res.name }}.py)? Its run history is kept.');">
+          <button type="submit" class="link danger-link">Delete</button>
+        </form>
       </td>
     </tr>
   {% endfor %}

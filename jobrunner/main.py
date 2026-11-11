@@ -46,13 +46,25 @@ def swagger_ui():
 
 @app.get("/api/redoc", include_in_schema=False)
 def redoc_ui():
-    from fastapi.openapi.docs import get_redoc_html
+    # Hand-written: fastapi's get_redoc_html hardcodes a Google Fonts <link>,
+    # which breaks offline deployments. ReDoc works fine with system fonts.
+    from fastapi.responses import HTMLResponse
 
-    return get_redoc_html(
-        openapi_url="/api/v1/openapi.json",
-        title="jobrunner API",
-        redoc_js_url="/static/vendor/redoc.standalone.js",
-        redoc_favicon_url="/static/icon.svg",
+    return HTMLResponse(
+        """<!doctype html>
+<html>
+<head>
+  <title>jobrunner API – ReDoc</title>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
+  <style>body { margin: 0; padding: 0; }</style>
+</head>
+<body>
+  <redoc spec-url="/api/v1/openapi.json"></redoc>
+  <script src="/static/vendor/redoc.standalone.js"></script>
+</body>
+</html>"""
     )
 
 _static_dir = Path(__file__).parent / "ui" / "static"
@@ -67,6 +79,24 @@ app.include_router(ui_routes.router)
 @app.exception_handler(AuthRedirect)
 async def _auth_redirect(_request: Request, exc: AuthRedirect):
     return RedirectResponse(exc.url, status_code=303)
+
+
+def _custom_openapi():
+    """Add x-logo pointing at the local icon — otherwise ReDoc fetches its
+    default logo from cdn.redoc.ly (breaks fully-offline deployments)."""
+    if app.openapi_schema:
+        return app.openapi_schema
+    from fastapi.openapi.utils import get_openapi
+
+    schema = get_openapi(
+        title=app.title, version=app.version, routes=app.routes
+    )
+    schema["info"]["x-logo"] = {"url": "/static/icon.svg"}
+    app.openapi_schema = schema
+    return schema
+
+
+app.openapi = _custom_openapi
 
 
 @app.get("/api/v1/health", tags=["meta"])

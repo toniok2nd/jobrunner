@@ -38,23 +38,45 @@ class EndpointDef:
 
     path: str
     fn: Callable
+    public: bool = False  # public=True: callable without an API token
+    methods: tuple[str, ...] = ("GET", "POST")
 
     @property
     def name(self) -> str:
         return self.fn.__name__
 
 
-def endpoint(path: str):
+_allowed_methods = ("GET", "POST")
+
+
+def endpoint(path: str, public: bool = False, methods=("GET", "POST")):
     """@endpoint("deploy") -> the decorated function is executed when
     /api/v1/web/<job>/deploy is called. It gets ctx (params = request JSON
-    body) and its return value becomes the JSON response."""
+    body) and its return value becomes the JSON response.
+
+    public=True makes it callable WITHOUT authentication — use only for
+    genuinely public endpoints (health pages, public webhooks, …).
+    methods=("GET",) restricts the allowed HTTP methods (default: GET + POST);
+    other methods get an HTTP 405 response."""
 
     def wrap(func: Callable) -> EndpointDef:
         if not _ENDPOINT_PATH_RE.match(path):
             raise ValueError(
                 f"invalid endpoint path {path!r}: letters, digits, - and _ only"
             )
-        return EndpointDef(path=path, fn=func)
+        if isinstance(methods, str):
+            meths = (methods.upper(),)
+        else:
+            meths = tuple(str(m).upper() for m in methods)
+        unknown = set(meths) - set(_allowed_methods)
+        if unknown:
+            raise ValueError(
+                f"unsupported HTTP method(s) {sorted(unknown)} — "
+                f"allowed: {_allowed_methods}"
+            )
+        if not meths:
+            raise ValueError("an endpoint must allow at least one HTTP method")
+        return EndpointDef(path=path, fn=func, public=bool(public), methods=meths)
 
     return wrap
 
@@ -136,7 +158,9 @@ class JobDef:
 
     def endpoint_spec(self) -> list[dict]:
         return [
-            {"path": e.path, "handler": e.name} for e in self.endpoints.values()
+            {"path": e.path, "handler": e.name, "public": e.public,
+             "methods": sorted(e.methods)}
+            for e in self.endpoints.values()
         ]
 
 

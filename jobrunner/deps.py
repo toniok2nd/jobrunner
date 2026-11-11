@@ -43,6 +43,19 @@ def require_user(request: Request) -> str:
     return username
 
 
+def _lookup_token(db: Session, authorization: str | None) -> ApiToken | None:
+    if not authorization:
+        return None
+    value = authorization.strip()
+    if value.lower().startswith("bearer "):
+        value = value[7:].strip()
+    return db.scalar(
+        select(ApiToken).where(
+            ApiToken.token_hash == hash_token(value), ApiToken.revoked.is_(False)
+        )
+    )
+
+
 def require_token(
     db: Session = Depends(get_db),
     authorization: str | None = Security(_api_key_header),
@@ -55,14 +68,15 @@ def require_token(
     """
     if not authorization:
         raise HTTPException(status_code=401, detail="missing bearer token")
-    value = authorization.strip()
-    if value.lower().startswith("bearer "):
-        value = value[7:].strip()
-    row = db.scalar(
-        select(ApiToken).where(
-            ApiToken.token_hash == hash_token(value), ApiToken.revoked.is_(False)
-        )
-    )
+    row = _lookup_token(db, authorization)
     if row is None:
         raise HTTPException(status_code=401, detail="invalid or revoked token")
     return row
+
+
+def optional_token(
+    db: Session = Depends(get_db),
+    authorization: str | None = Security(_api_key_header),
+) -> ApiToken | None:
+    """Same lookup, but returns None instead of 401 — for public endpoints."""
+    return _lookup_token(db, authorization)

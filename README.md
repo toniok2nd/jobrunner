@@ -83,7 +83,18 @@ def report(ctx):
     return html(f"<h1>Report for run {ctx.run_id[:8]}</h1>", status=200)
 ```
 
+- Make an endpoint callable without a token with `public=True`
+  (badge shown in the UI; anonymous calls are logged with `auth: public`):
+
+```python
+@endpoint("status", public=True)
+def status_handler(ctx):
+    return html("<h1>OK</h1>")
+```
+
 - Same bearer-token auth as the rest of the API; `GET` also works (query params).
+- Restrict methods per endpoint: `@endpoint("x", methods=["GET"])` — others get
+  `405` with an `Allow` header. Default: GET + POST.
 - Responses: `200` + handler result · `404` unknown job/endpoint ·
   `500` handler raised (with traceback tail in `log`) · `504` if the handler
   exceeds `JOBRUNNER_WEBHOOK_TIMEOUT_SECONDS` (default 60) — it keeps running.

@@ -22,6 +22,9 @@ from ..services import (
     WebhookError,
     cancel_run,
     create_token,
+    delete_endpoint_from_file,
+    delete_job_file,
+    delete_shared_lib,
     dispatch_webhook,
     revoke_token,
     save_job_code,
@@ -464,6 +467,36 @@ async def libs_save(name: str, request: Request, user: str = Depends(require_use
     return {"saved": True, "load_error": load_error}
 
 
+# --- deletion (jobs / endpoints / libs) ------------------------------------
+
+
+@router.post("/jobs/{name}/delete")
+def job_delete(name: str, user: str = Depends(require_user)):
+    try:
+        delete_job_file(name)
+    except JobValidationError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return _redirect("/")
+
+
+@router.post("/endpoints/{job}/{path}/delete")
+def endpoint_delete(job: str, path: str, user: str = Depends(require_user)):
+    try:
+        delete_endpoint_from_file(job, path)
+    except JobValidationError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return _redirect("/endpoints")
+
+
+@router.post("/libs/{name}/delete")
+def lib_delete(name: str, user: str = Depends(require_user)):
+    try:
+        delete_shared_lib(name)
+    except JobValidationError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return _redirect("/libs")
+
+
 # --- runs ---------------------------------------------------------------
 
 
@@ -796,6 +829,7 @@ def endpoints_page(request: Request, user: str = Depends(require_user)):
             for ep in res.job.endpoints.values():
                 endpoints.append(
                     {"job": res.name, "path": ep.path, "handler": ep.name,
+                     "public": ep.public, "methods": sorted(ep.methods),
                      "url": f"/api/v1/web/{res.name}/{ep.path}",
                      "curl": _curl_web_cmd(request, res.name, ep.path)}
                 )

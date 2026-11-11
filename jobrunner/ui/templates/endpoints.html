@@ -25,12 +25,13 @@
 <p class="muted">No endpoints yet.</p>
 {% else %}
 <table>
-  <thead><tr><th>File</th><th>Path</th><th>Handler</th><th>curl</th><th></th></tr></thead>
+  <thead><tr><th>File</th><th>Path</th><th>Methods</th><th>Handler</th><th>curl</th><th></th></tr></thead>
   <tbody>
   {% for ep in endpoints %}
     <tr>
       <td><a href="/jobs/{{ ep.job }}">{{ ep.job }}</a></td>
-      <td><code>{{ ep.path }}</code></td>
+      <td><code>{{ ep.path }}</code>{% if ep.public %} <span class="badge s-warn" title="Callable without an API token">public</span>{% endif %}</td>
+      <td>{% for m in ep.methods %}<span class="badge s-queued">{{ m }}</span> {% endfor %}</td>
       <td class="muted">{{ ep.handler }}()</td>
       <td><code class="curl-cmd">{{ ep.curl }}</code>
           <button type="button" class="copy-btn" data-cmd="{{ ep.curl }}" onclick="copyCmd(this)">Copy</button>
@@ -38,15 +39,18 @@
       <td class="actions">
         <button type="button" onclick="toggleTest('{{ ep.job }}', '{{ ep.path }}')">Test</button>
         <a href="/jobs/{{ ep.job }}/edit">Edit</a>
+        <form method="post" action="/endpoints/{{ ep.job }}/{{ ep.path }}/delete" class="inline"
+              onsubmit="return confirm('Remove endpoint {{ ep.path }} from {{ ep.job }}.py? Only its function is removed; the rest of the file is untouched.');">
+          <button type="submit" class="link danger-link">Delete</button>
+        </form>
       </td>
     </tr>
     <tr id="test-{{ ep.job }}-{{ ep.path }}" hidden>
-      <td colspan="5">
+      <td colspan="6">
         <form onsubmit="callEndpoint(event, '{{ ep.job }}', '{{ ep.path }}')">
           <div class="filters">
             <select name="http_method">
-              <option value="POST">POST</option>
-              <option value="GET">GET</option>
+              {% for m in ep.methods %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
             </select>
             <textarea name="params" rows="2" spellcheck="false" placeholder='{"key": "value"} — JSON body for POST, query params for GET'></textarea>
             <button type="submit" class="primary">Call</button>

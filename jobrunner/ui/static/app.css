@@ -75,6 +75,7 @@ code { background: rgba(255,255,255,.06); padding: 1px 5px; border-radius: 4px; 
 .s-failed { background: rgba(229,83,75,.18); color: var(--fail); }
 .s-cancelled { background: rgba(232,161,60,.18); color: var(--warn); }
 .s-upstream_failed { background: rgba(232,161,60,.18); color: var(--warn); }
+.s-warn { background: rgba(232,161,60,.18); color: var(--warn); }
 
 button, .button {
   display: inline-block;
@@ -90,6 +91,8 @@ button, .button {
 button.primary, .button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 button.danger { background: var(--fail); border-color: var(--fail); color: #fff; }
 button.link { background: none; border: none; color: var(--accent); padding: 0; font-size: 13px; }
+button.danger-link { color: var(--fail); }
+.actions .inline { margin-left: 10px; }
 button:hover { opacity: .88; }
 
 form.inline { display: inline; }

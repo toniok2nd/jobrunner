@@ -3,7 +3,13 @@
 {% block content %}
 <div class="page-head">
   <h1>{{ res.name }}</h1>
-  <a class="button" href="/jobs/{{ res.name }}/edit">Edit code</a>
+  <div>
+    <a class="button" href="/jobs/{{ res.name }}/edit">Edit code</a>
+    <form method="post" action="/jobs/{{ res.name }}/delete" class="inline"
+          onsubmit="return confirm('Delete job {{ res.name }} (file {{ res.name }}.py)? Its run history is kept.');">
+      <button type="submit" class="danger">Delete job</button>
+    </form>
+  </div>
 </div>
 
 {% if res.error %}
@@ -35,7 +41,7 @@
   <tbody>
   {% for ep in endpoint_rows %}
     <tr>
-      <td><code>/api/v1/web/{{ res.name }}/{{ ep.path }}</code></td>
+      <td><code>/api/v1/web/{{ res.name }}/{{ ep.path }}</code>{% if ep.public %} <span class="badge s-warn" title="Callable without an API token">public</span>{% endif %}</td>
       <td class="muted">{{ ep.handler }}()</td>
       <td><button type="button" class="copy-btn" data-cmd="{{ ep.curl }}" onclick="copyCmd(this)">Copy curl</button></td>
     </tr>

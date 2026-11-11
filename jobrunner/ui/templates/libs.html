@@ -28,7 +28,13 @@
       <td><code>lib/{{ lib.name }}.py</code></td>
       <td class="muted">{{ lib.size }} B</td>
       <td class="muted">{{ lib.mtime }}</td>
-      <td class="actions"><a href="/libs/{{ lib.name }}/edit">Edit</a></td>
+      <td class="actions">
+        <a href="/libs/{{ lib.name }}/edit">Edit</a>
+        <form method="post" action="/libs/{{ lib.name }}/delete" class="inline"
+              onsubmit="return confirm('Delete shared module {{ lib.name }}.py? Jobs importing it will fail at their next load.');">
+          <button type="submit" class="link danger-link">Delete</button>
+        </form>
+      </td>
     </tr>
   {% endfor %}
   </tbody>
