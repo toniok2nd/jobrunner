@@ -6,7 +6,7 @@
 Auth: same bearer tokens as the rest of the API.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from starlette.concurrency import run_in_threadpool
 
 from ..deps import require_token
@@ -73,8 +73,20 @@ async def call_webhook(
         "auth": f"token:{token.label}",
     }
     try:
-        return await run_in_threadpool(
+        payload = await run_in_threadpool(
             dispatch_webhook, job_name, endpoint_path, params, None, meta
         )
     except WebhookError as exc:
         raise _http_error(exc)
+
+    # Handler returned a custom response (html(), text(), …)
+    if "content_type" in payload:
+        headers = dict(payload.get("headers") or {})
+        headers["X-Jobrunner-Run-Id"] = payload["run_id"]
+        return Response(
+            content=payload["body"],
+            media_type=payload["content_type"],
+            status_code=payload.get("http_status", 200),
+            headers=headers,
+        )
+    return payload

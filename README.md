@@ -73,6 +73,16 @@ curl -X POST http://localhost:8080/api/v1/web/etl_daily/deploy \
 # → {"status": "success", "result": {"deployed": true}, "log": "…"}
 ```
 
+- Return HTML pages / plain text instead of JSON with `html()` / `text()`:
+
+```python
+from jobrunner.dsl import endpoint, html
+
+@endpoint("report")
+def report(ctx):
+    return html(f"<h1>Report for run {ctx.run_id[:8]}</h1>", status=200)
+```
+
 - Same bearer-token auth as the rest of the API; `GET` also works (query params).
 - Responses: `200` + handler result · `404` unknown job/endpoint ·
   `500` handler raised (with traceback tail in `log`) · `504` if the handler

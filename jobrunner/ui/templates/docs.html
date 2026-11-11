@@ -50,7 +50,7 @@ def hello(ctx):
 {% endset %}
     <div class="doc-code">
       <button class="copy-btn" onclick="copyCmd(this)">Copy</button>
-      <pre>{{ doc | trim }}</pre>
+      <pre>{{ doc | trim | forceescape }}</pre>
     </div>
   </section>
 
@@ -79,7 +79,7 @@ def notify(ctx): ...                     # ne part que quand les deux ont fini
 {% endset %}
     <div class="doc-code">
       <button class="copy-btn" onclick="copyCmd(this)">Copy</button>
-      <pre>{{ doc | trim }}</pre>
+      <pre>{{ doc | trim | forceescape }}</pre>
     </div>
     <ul>
       <li>Si une tâche lève une exception : la tâche est <span class="badge s-failed">failed</span>,
@@ -137,7 +137,7 @@ def report(ctx):
 {% endset %}
     <div class="doc-code">
       <button class="copy-btn" onclick="copyCmd(this)">Copy</button>
-      <pre>{{ doc | trim }}</pre>
+      <pre>{{ doc | trim | forceescape }}</pre>
     </div>
     <p>Déclencher avec des paramètres surcharge les valeurs par défaut :
     <code>{"params": {"date": "2026-11-11"}}</code></p>
@@ -171,7 +171,7 @@ curl "{{ request.base_url }}api/v1/runs/9f2a…/logs?task=transform" \
 {% endset %}
     <div class="doc-code">
       <button class="copy-btn" onclick="copyCmd(this)">Copy</button>
-      <pre>{{ doc | trim }}</pre>
+      <pre>{{ doc | trim | forceescape }}</pre>
     </div>
     <p>Tokens : page <a href="/tokens">API tokens</a>. Documentation interactive des routes :
     <a href="/api/docs" target="_blank">/api/docs</a>.</p>
@@ -192,15 +192,43 @@ def deploy_handler(ctx):
 {% endset %}
     <div class="doc-code">
       <button class="copy-btn" onclick="copyCmd(this)">Copy</button>
-      <pre>{{ doc | trim }}</pre>
+      <pre>{{ doc | trim | forceescape }}</pre>
     </div>
     <ul>
       <li>Gérez-les comme les jobs : page <a href="/endpoints">Endpoints</a> (créer, éditer, tester).</li>
       <li>Codes de réponse : <code>200</code> succès · <code>404</code> job/endpoint inconnu ·
           <code>500</code> exception (traceback dans <code>log</code>) · <code>504</code> timeout.</li>
+      <li><strong>Retourner autre chose que du JSON</strong> — une page HTML complète, du texte,
+          un statut personnalisé : <code>html()</code> / <code>text()</code> (ci-dessous).</li>
       <li>Le handler peut déclencher le DAG du job lui-même : voir <code>run-now</code> dans
         l'exemple <code>etl_daily</code>.</li>
     </ul>
+
+    <h3>Retourner une page HTML (ou du texte)</h3>
+    {% set doc %}from jobrunner.dsl import endpoint, html, text
+
+@endpoint("report")
+def report_handler(ctx):
+    rows = ctx.params.get("rows", 1000)
+    return html(f"""
+<!doctype html>
+<html><head><title>Rapport</title></head>
+<body style="font-family: sans-serif">
+  <h1>Rapport ETL</h1>
+  <p><b>{rows}</b> lignes traitées — run {{ '{' }}ctx.run_id[:8]{{ '}' }}</p>
+</body></html>""")
+
+@endpoint("health-text")
+def health_text(ctx):
+    return text("OK\n", status=200, headers={"X-Custom": "yes"})
+{% endset %}
+    <div class="doc-code">
+      <button class="copy-btn" onclick="copyCmd(this)">Copy</button>
+      <pre>{{ doc | trim | forceescape }}</pre>
+    </div>
+    <p>Le navigateur reçoit directement la page (Content-Type <code>text/html</code>) ; le statut
+    HTTP et les en-têtes sont personnalisables. Chaque appel reste tracé dans l'historique, et
+    l'en-tête de réponse <code>X-Jobrunner-Run-Id</code> y renvoie.</p>
   </section>
 
   <section id="editor">

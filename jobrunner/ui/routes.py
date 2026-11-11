@@ -895,11 +895,20 @@ async def endpoints_call(
         "auth": f"session:{user}",
     }
     try:
-        return await run_in_threadpool(dispatch_webhook, job, path, params, None, meta)
+        payload = await run_in_threadpool(dispatch_webhook, job, path, params, None, meta)
     except WebhookError as exc:
         status = {"job_not_found": 404, "endpoint_not_found": 404,
                   "timeout": 504}.get(exc.code, 500)
         raise HTTPException(status_code=status, detail=exc.payload)
+    if "content_type" in payload:  # html()/text() responses from the handler
+        from fastapi.responses import Response as _Resp
+
+        return _Resp(
+            content=payload["body"],
+            media_type=payload["content_type"],
+            status_code=payload.get("http_status", 200),
+        )
+    return payload
 
 
 # --- documentation -------------------------------------------------------

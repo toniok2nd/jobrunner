@@ -59,6 +59,40 @@ def endpoint(path: str):
     return wrap
 
 
+class EndpointResponse:
+    """Custom HTTP response an @endpoint handler can return instead of JSON.
+
+    Usage:
+        from jobrunner.dsl import endpoint, html, text
+
+        @endpoint("report")
+        def report(ctx):
+            return html("<h1>Report</h1>")
+    """
+
+    def __init__(
+        self,
+        body: str,
+        content_type: str = "text/plain",
+        status: int = 200,
+        headers: dict | None = None,
+    ):
+        self.body = body if isinstance(body, str) else str(body)
+        self.content_type = content_type
+        self.status = status
+        self.headers = dict(headers or {})
+
+
+def html(body: str, status: int = 200, headers: dict | None = None) -> EndpointResponse:
+    """Return a full HTML page from an endpoint handler."""
+    return EndpointResponse(body, "text/html; charset=utf-8", status, headers)
+
+
+def text(body: str, status: int = 200, headers: dict | None = None) -> EndpointResponse:
+    """Return plain text from an endpoint handler."""
+    return EndpointResponse(body, "text/plain; charset=utf-8", status, headers)
+
+
 def _dep_name(dep) -> str:
     if isinstance(dep, TaskDef):
         return dep.name

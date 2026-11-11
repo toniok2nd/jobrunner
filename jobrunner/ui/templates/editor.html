@@ -60,6 +60,8 @@ var DSL_HINTS = [
   {text: "@task\ndef ", display: "@task — nouvelle tâche"},
   {text: "@task(depends_on=[", display: "@task(depends_on=[...]) — tâche avec dépendances"},
   {text: "@endpoint('", display: "@endpoint('path') — endpoint HTTP personnalisé"},
+  {text: "return html('<h1></h1>')", display: "html(body) — réponse page HTML"},
+  {text: "return text('')", display: "text(body) — réponse texte brut"},
   {text: "from jobrunner.dsl import task, endpoint", display: "from jobrunner.dsl import task, endpoint"},
   {text: "task", display: "task (décorateur)"},
   {text: "endpoint", display: "endpoint (décorateur)"},

@@ -89,9 +89,15 @@ async function callEndpoint(ev, job, path) {
       body: JSON.stringify({params: params}),
     });
   }
-  var data = await resp.json().catch(() => ({}));
-  out.textContent = (resp.ok ? "OK " + method + " " : "HTTP " + resp.status + " ") +
-                    JSON.stringify(data.detail || data, null, 2);
+  var raw = await resp.text();
+  var shown;
+  try {
+    var data = JSON.parse(raw);
+    shown = JSON.stringify(data.detail || data, null, 2);
+  } catch (e) {
+    shown = raw;  // HTML / plain-text responses from html() / text()
+  }
+  out.textContent = (resp.ok ? "OK " + method + " " : "HTTP " + resp.status + " ") + shown;
 }
 </script>
 {% endblock %}

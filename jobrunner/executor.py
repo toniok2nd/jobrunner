@@ -18,7 +18,7 @@ from . import logcapture
 from .celery_app import celery
 from .config import get_settings
 from .db import SessionLocal
-from .dsl import JobDef
+from .dsl import EndpointResponse, JobDef
 from .loader import load_registry
 from .models import (
     STATUS_CANCELLED,
@@ -324,9 +324,23 @@ def run_webhook_task(job_name: str, endpoint_path: str, params: dict,
             return {"status": "failed", "code": "handler_error",
                     "error": tr.error, "log": _read_tail(task_log_file),
                     "run_id": run_id}
-        print(f"=== done -> {value!r} ===")
-        return {"status": "success", "result": value,
-                "log": _read_tail(task_log_file), "run_id": run_id}
+        print(f"=== done -> {str(value)[:200]!r} ===")
+        payload = {"status": "success", "result": value,
+                   "log": _read_tail(task_log_file), "run_id": run_id}
+        # Custom HTTP responses (HTML page, plain text, …) from the handler
+        if isinstance(value, EndpointResponse):
+            body = value.body
+            if len(body) > 1_000_000:
+                fh_note = "\n<!-- truncated: response exceeded 1MB -->"
+                body = body[:1_000_000] + fh_note
+            payload.update(
+                content_type=value.content_type,
+                body=body,
+                http_status=value.status,
+                headers=value.headers,
+            )
+            payload["result"] = f"<{value.content_type}: {len(body)} bytes>"
+        return payload
     finally:
         logcapture.clear_run_log()
         run_fh.close()
