@@ -22,11 +22,12 @@ COPY jobs/examples /opt/jobrunner-seed/jobs
 
 RUN chmod +x /entrypoint.sh && mkdir -p /srv/jobrunner/jobs /srv/jobrunner/data
 
+# NOTE: no default secrets. JOBRUNNER_SECRET_KEY and JOBRUNNER_ADMIN_PASSWORD
+# are generated randomly at first boot and persisted in the data volume
+# (set them explicitly to control them).
 ENV JOBRUNNER_JOBS_DIR=/srv/jobrunner/jobs \
     JOBRUNNER_DATA_DIR=/srv/jobrunner/data \
-    JOBRUNNER_SECRET_KEY=change-me \
     JOBRUNNER_ADMIN_USER=admin \
-    JOBRUNNER_ADMIN_PASSWORD=admin \
     JOBRUNNER_ENABLE_BEAT=true
 
 EXPOSE 8080

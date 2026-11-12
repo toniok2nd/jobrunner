@@ -953,7 +953,7 @@ def endpoints_create(
     return _redirect(f"/jobs/{file}/edit")
 
 
-@router.api_route("/endpoints/{job}/{path}/call", methods=["GET", "POST"])
+@router.post("/endpoints/{job}/{path}/call")
 async def endpoints_call(
     job: str,
     path: str,
@@ -961,14 +961,15 @@ async def endpoints_call(
     user: str = Depends(require_user),
 ):
     """Quick-test an endpoint from the GUI (session auth, no token needed).
-    POST: JSON body {"params": {...}} — GET: plain query string."""
-    if request.method == "POST":
-        body = await request.json()
-        params = body.get("params", {})
-        if not isinstance(params, dict):
-            params = {"body": params}
-    else:
-        params = dict(request.query_params)
+
+    POST ONLY — never GET: this route executes job code, and SameSite=Lax
+    cookies ride along on cross-site top-level GET navigations, which would
+    make it CSRF-able. (GET calls to endpoints belong to the token-authed
+    /api/v1/web/... API, not to the ambient-cookie GUI.)"""
+    body = await request.json()
+    params = body.get("params", {})
+    if not isinstance(params, dict):
+        params = {"body": params}
     from starlette.concurrency import run_in_threadpool
 
     meta = {

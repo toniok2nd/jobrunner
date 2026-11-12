@@ -167,8 +167,8 @@ def demo(ctx):
 | Variable | Default | Purpose |
 |---|---|---|
 | `JOBRUNNER_ADMIN_USER` | `admin` | Admin username (seeded on first boot only) |
-| `JOBRUNNER_ADMIN_PASSWORD` | `admin` | Admin password (seeded on first boot only) |
-| `JOBRUNNER_SECRET_KEY` | `change-me` | Session-cookie signing key — **change it** |
+| `JOBRUNNER_ADMIN_PASSWORD` | **generated at first boot** | Admin password: set it explicitly, or a random one is generated, printed to the container log once, and persisted in the data volume |
+| `JOBRUNNER_SECRET_KEY` | **generated at first boot** | Session-cookie signing key: set it explicitly, or a random one is generated and persisted in the data volume |
 | `JOBRUNNER_JOBS_DIR` | `/srv/jobrunner/jobs` | Where job `.py` files live |
 | `JOBRUNNER_DATA_DIR` | `/srv/jobrunner/data` | SQLite DB, logs, scheduler state |
 | `JOBRUNNER_REDIS_URL` | `redis://localhost:6379/0` | Celery broker |

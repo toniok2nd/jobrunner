@@ -214,7 +214,8 @@ def deploy_handler(ctx):
           — badge « public » orange dans la GUI. ⚠️ À réserver aux données réellement publiques.</li>
       <li><strong>Limiter la méthode HTTP</strong> : <code>methods=("GET",)</code> — l'endpoint n'accepte
           que GET ; un POST reçoit <code>405 Method Not Allowed</code> (avec l'en-tête <code>Allow</code>).
-          Défaut : GET + POST. Le sélecteur du panneau Test s'adapte automatiquement.</li>
+          Défaut : GET + POST. (Le panneau Test de la GUI appelle toujours en POST —
+          volontairement, pour éviter toute exécution CSRF via un GET inter-sites.)</li>
       <li>Le handler peut déclencher le DAG du job lui-même : voir <code>run-now</code> dans
         l'exemple <code>etl_daily</code>.</li>
     </ul>

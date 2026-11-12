@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .db import SessionLocal
-from .models import ApiToken
+from .models import ApiToken, User
 from .security import SESSION_COOKIE, hash_token, read_session_cookie
 
 _api_key_header = APIKeyHeader(name="Authorization", auto_error=False)
@@ -36,8 +36,19 @@ def session_username(request: Request) -> str | None:
 
 
 def require_user(request: Request) -> str:
-    """Session-cookie auth for HTML pages and the token-management API."""
+    """Session-cookie auth for HTML pages and the token-management API.
+
+    Beyond signature validity, the username must exist in the users table —
+    so forged cookies for nonexistent users are rejected in depth.
+    """
     username = session_username(request)
+    if username:
+        with SessionLocal() as session:
+            exists = session.scalar(
+                select(User.id).where(User.username == username)
+            )
+        if not exists:
+            username = None
     if not username:
         raise AuthRedirect()
     return username

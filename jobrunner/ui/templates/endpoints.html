@@ -49,11 +49,8 @@
       <td colspan="6">
         <form onsubmit="callEndpoint(event, '{{ ep.job }}', '{{ ep.path }}')">
           <div class="filters">
-            <select name="http_method">
-              {% for m in ep.methods %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
-            </select>
-            <textarea name="params" rows="2" spellcheck="false" placeholder='{"key": "value"} — JSON body for POST, query params for GET'></textarea>
-            <button type="submit" class="primary">Call</button>
+            <textarea name="params" rows="2" spellcheck="false" placeholder='{"key": "value"} — JSON body (POST)'></textarea>
+            <button type="submit" class="primary">Call (POST)</button>
           </div>
         </form>
         <pre class="log" id="result-{{ ep.job }}-{{ ep.path }}" style="max-height:200px"></pre>
@@ -80,19 +77,12 @@ async function callEndpoint(ev, job, path) {
     out.textContent = "Invalid params JSON: " + e;
     return;
   }
-  var method = form.http_method.value;
-  out.textContent = method + " calling…";
-  var resp;
-  if (method === "GET") {
-    var qs = new URLSearchParams(params).toString();
-    resp = await fetch("/endpoints/" + job + "/" + path + "/call" + (qs ? "?" + qs : ""));
-  } else {
-    resp = await fetch("/endpoints/" + job + "/" + path + "/call", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({params: params}),
-    });
-  }
+  out.textContent = "calling…";
+  var resp = await fetch("/endpoints/" + job + "/" + path + "/call", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({params: params}),
+  });
   var raw = await resp.text();
   var shown;
   try {
@@ -101,7 +91,7 @@ async function callEndpoint(ev, job, path) {
   } catch (e) {
     shown = raw;  // HTML / plain-text responses from html() / text()
   }
-  out.textContent = (resp.ok ? "OK " + method + " " : "HTTP " + resp.status + " ") + shown;
+  out.textContent = (resp.ok ? "OK " : "HTTP " + resp.status + " ") + shown;
 }
 </script>
 {% endblock %}
